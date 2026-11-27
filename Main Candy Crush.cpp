@@ -1,12 +1,11 @@
 #include <SFML/Graphics.hpp>
+#include <SFML/Audio.hpp>
 #include <iostream>
 #include <cstdlib>
 #include <ctime>
 #include <cmath>
 #include <fstream>
-#include <sstream>
 #include <string>
-#include <cctype>
 #include <optional>
 #include <map>
 
@@ -88,13 +87,86 @@ bool loadCandyTextures()
     return candyTexturesLoaded;
 }
 
+// ==========================================
+// SFML 3 AUDIO MANAGER
+// ==========================================
+// Place these files in an "audio" folder beside the program's working directory:
+// select.wav, swap.wav, gameover.wav, background.mp3
+struct GameAudio
+{
+    sf::SoundBuffer selectBuffer;
+    sf::SoundBuffer swapBuffer;
+    sf::SoundBuffer gameOverBuffer;
+
+    sf::Sound selectSound;
+    sf::Sound swapSound;
+    sf::Sound gameOverSound;
+    sf::Music backgroundMusic;
+
+    bool selectLoaded = false;
+    bool swapLoaded = false;
+    bool gameOverLoaded = false;
+    bool musicLoaded = false;
+
+    GameAudio()
+        : selectSound(selectBuffer), swapSound(swapBuffer), gameOverSound(gameOverBuffer)
+    {
+    }
+
+    void loadAudio()
+    {
+        selectLoaded = selectBuffer.loadFromFile("audio/select.wav");
+        swapLoaded = swapBuffer.loadFromFile("audio/swap.wav");
+        gameOverLoaded = gameOverBuffer.loadFromFile("audio/gameover.wav");
+        musicLoaded = backgroundMusic.openFromFile("audio/background.mp3");
+
+        if (!selectLoaded) cerr << "Could not load audio/select.wav" << endl;
+        if (!swapLoaded) cerr << "Could not load audio/swap.wav" << endl;
+        if (!gameOverLoaded) cerr << "Could not load audio/gameover.wav" << endl;
+        if (!musicLoaded) cerr << "Could not load audio/background.mp3" << endl;
+
+        selectSound.setVolume(65.0f);
+        swapSound.setVolume(75.0f);
+        gameOverSound.setVolume(85.0f);
+
+        if (musicLoaded)
+        {
+            backgroundMusic.setVolume(30.0f);
+            backgroundMusic.setLooping(true);
+        }
+    }
+
+    void playSelect()
+    {
+        if (selectLoaded) { selectSound.stop(); selectSound.play(); }
+    }
+
+    void playSwap()
+    {
+        if (swapLoaded) { swapSound.stop(); swapSound.play(); }
+    }
+
+    void playBackgroundMusic()
+    {
+        if (musicLoaded && backgroundMusic.getStatus() != sf::SoundSource::Status::Playing)
+            backgroundMusic.play();
+    }
+
+    void playGameOver()
+    {
+        if (musicLoaded) backgroundMusic.stop();
+        if (gameOverLoaded) { gameOverSound.stop(); gameOverSound.play(); }
+    }
+};
+
+GameAudio audio;
 
 // Leaderboard settings
 const int MAX_LEADERBOARD_ENTRIES = 100;
 const int DISPLAYED_LEADERBOARD_ENTRIES = 5;
 const string LEADERBOARD_FILE = "leaderboard.txt";
 const string SPECIAL_PLAYER_NAME = "Maam Anousha";
-const int SPECIAL_PLAYER_SCORE = 1650;
+const int SPECIAL_PLAYER_SCORE = 2000;
 LeaderboardEntry leaderboard[MAX_LEADERBOARD_ENTRIES];
 int leaderboardCount = 0;
 
@@ -319,7 +391,6 @@ void drawBoard(sf::RenderWindow& window)
             if (candyTexturesLoaded && board[row][col] >= 0 && board[row][col] < 5)
             {
                 const sf::Vector2u textureSize = candyTextures[board[row][col]].getSize();
-                // Calculate the scale manually (no Algorithm Library needed).
                 const float widthScale = 64.0f / static_cast<float>(textureSize.x);
                 const float heightScale = 64.0f / static_cast<float>(textureSize.y);
                 float fitScale = widthScale;
@@ -485,11 +556,13 @@ void selectCandy(int mouseX, int mouseY)
         {
             selectedRow = row;
             selectedCol = col;
+            audio.playSelect();
         }
         else if ((row == selectedRow && (col == selectedCol - 1 || col == selectedCol + 1)) ||
             (col == selectedCol && (row == selectedRow - 1 || row == selectedRow + 1)))
         {
             swapCandies(selectedRow, selectedCol, row, col);
+            audio.playSwap();
             checkMatches();
 
             if (hasMatches())
@@ -515,6 +588,7 @@ void selectCandy(int mouseX, int mouseY)
         {
             selectedRow = row;
             selectedCol = col;
+            audio.playSelect();
         }
     }
     else
@@ -757,13 +831,16 @@ void sortLeaderboard()
     }
 }
 
-// Add Maam Anousha if she is not already present.
+// Keep Maam Anousha's leaderboard score fixed at 2000.
 void ensureSpecialPlayerExists()
 {
     for (int i = 0; i < leaderboardCount; i++)
     {
         if (leaderboard[i].playerName == SPECIAL_PLAYER_NAME)
+        {
+            leaderboard[i].playerScore = SPECIAL_PLAYER_SCORE;
             return;
+        }
     }
 
     if (leaderboardCount < MAX_LEADERBOARD_ENTRIES)
@@ -938,7 +1015,7 @@ void drawLeaderboard(sf::RenderWindow& window, float startY)
         window.draw(entryText);
     }
 
-    sf::Text challenge(font, "Beat 1650 to take the crown!", 15);
+    sf::Text challenge(font, "PRODUCED BY KODE KRAFTERS", 15);
     challenge.setFillColor(sf::Color(255, 190, 100));
     drawCenteredText(window, challenge, 920.0f, startY + 295.0f);
 }
@@ -1009,29 +1086,22 @@ void drawNameEntry(sf::RenderWindow& window)
     panel.setOutlineColor(sf::Color(160, 205, 255, 105));
     window.draw(panel);
 
-    // Colorful candy-like accents around the title.
-    const sf::Color candyColors[5] = {
-        sf::Color(255, 95, 125),
-        sf::Color(255, 185, 75),
-        sf::Color(155, 105, 235),
-        sf::Color(75, 175, 255),
-        sf::Color(100, 220, 145)
-    };
-
+    // Five actual Jolly Rancher candy textures across the welcome panel.
     for (int i = 0; i < 5; ++i)
     {
-        const float x = 285.0f + i * 132.0f;
-        sf::CircleShape candy(17.0f);
-        candy.setPosition({ x, 145.0f });
-        candy.setFillColor(candyColors[i]);
-        candy.setOutlineThickness(2.0f);
-        candy.setOutlineColor(sf::Color(255, 255, 255, 150));
-        window.draw(candy);
+        if (candyTexturesLoaded)
+        {
+            sf::Sprite candy(candyTextures[i]);
+            const sf::Vector2u textureSize = candyTextures[i].getSize();
+            const float widthScale = 58.0f / static_cast<float>(textureSize.x);
+            const float heightScale = 58.0f / static_cast<float>(textureSize.y);
+            const float scale = widthScale < heightScale ? widthScale : heightScale;
 
-        sf::CircleShape shine(5.0f);
-        shine.setPosition({ x + 5.0f, 149.0f });
-        shine.setFillColor(sf::Color(255, 255, 255, 165));
-        window.draw(shine);
+            candy.setOrigin({ textureSize.x / 2.0f, textureSize.y / 2.0f });
+            candy.setScale({ scale, scale });
+            candy.setPosition({ 302.0f + i * 134.0f, 165.0f });
+            window.draw(candy);
+        }
     }
 
     sf::Text titleTop(font, "CANDY CRUSH:", 43);
@@ -1078,7 +1148,7 @@ void drawNameEntry(sf::RenderWindow& window)
     instruction.setFillColor(sf::Color(150, 255, 205));
     drawCenteredText(window, instruction, 550.0f, 560.0f);
 
-    sf::Text challenge(font, "Can you beat Maam Anousha's 1650 points?", 18);
+    sf::Text challenge(font, "Can you beat Maam Anousha's 2000 points?", 18);
     challenge.setFillColor(sf::Color(255, 190, 125));
     drawCenteredText(window, challenge, 550.0f, 635.0f);
 }
@@ -1174,6 +1244,7 @@ void restartGame()
 
     initializeBoard();
     checkMatches();
+    audio.playBackgroundMusic();
 }
 
 int main()
@@ -1181,6 +1252,7 @@ int main()
     srand(static_cast<unsigned int>(time(nullptr)));
 
     loadCandyTextures();
+    audio.loadAudio();
 
     loadPersonalBests();
     loadLeaderboard();
@@ -1275,6 +1347,7 @@ int main()
             {
                 timeRemaining = 0.0f;
                 gameOver = true;
+                audio.playGameOver();
 
                 if (score > personalBest)
                 {
