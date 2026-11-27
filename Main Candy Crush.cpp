@@ -1,12 +1,11 @@
 #include <SFML/Graphics.hpp>
+#include <SFML/Audio.hpp>
 #include <iostream>
 #include <cstdlib>
 #include <ctime>
 #include <cmath>
 #include <fstream>
-#include <sstream>
 #include <string>
-#include <cctype>
 #include <optional>
 #include <map>
 
@@ -88,6 +87,79 @@ bool loadCandyTextures()
     return candyTexturesLoaded;
 }
 
+// ==========================================
+// SFML 3 AUDIO MANAGER
+// ==========================================
+// Place these files in an "audio" folder beside the program's working directory:
+// select.wav, swap.wav, gameover.wav, background.mp3
+struct GameAudio
+{
+    sf::SoundBuffer selectBuffer;
+    sf::SoundBuffer swapBuffer;
+    sf::SoundBuffer gameOverBuffer;
+
+    sf::Sound selectSound;
+    sf::Sound swapSound;
+    sf::Sound gameOverSound;
+    sf::Music backgroundMusic;
+
+    bool selectLoaded = false;
+    bool swapLoaded = false;
+    bool gameOverLoaded = false;
+    bool musicLoaded = false;
+
+    GameAudio()
+        : selectSound(selectBuffer), swapSound(swapBuffer), gameOverSound(gameOverBuffer)
+    {
+    }
+
+    void loadAudio()
+    {
+        selectLoaded = selectBuffer.loadFromFile("audio/select.wav");
+        swapLoaded = swapBuffer.loadFromFile("audio/swap.wav");
+        gameOverLoaded = gameOverBuffer.loadFromFile("audio/gameover.wav");
+        musicLoaded = backgroundMusic.openFromFile("audio/background.mp3");
+
+        if (!selectLoaded) cerr << "Could not load audio/select.wav" << endl;
+        if (!swapLoaded) cerr << "Could not load audio/swap.wav" << endl;
+        if (!gameOverLoaded) cerr << "Could not load audio/gameover.wav" << endl;
+        if (!musicLoaded) cerr << "Could not load audio/background.mp3" << endl;
+
+        selectSound.setVolume(65.0f);
+        swapSound.setVolume(75.0f);
+        gameOverSound.setVolume(85.0f);
+
+        if (musicLoaded)
+        {
+            backgroundMusic.setVolume(30.0f);
+            backgroundMusic.setLooping(true);
+        }
+    }
+
+    void playSelect()
+    {
+        if (selectLoaded) { selectSound.stop(); selectSound.play(); }
+    }
+
+    void playSwap()
+    {
+        if (swapLoaded) { swapSound.stop(); swapSound.play(); }
+    }
+
+    void playBackgroundMusic()
+    {
+        if (musicLoaded && backgroundMusic.getStatus() != sf::SoundSource::Status::Playing)
+            backgroundMusic.play();
+    }
+
+    void playGameOver()
+    {
+        if (musicLoaded) backgroundMusic.stop();
+        if (gameOverLoaded) { gameOverSound.stop(); gameOverSound.play(); }
+    }
+};
+
+GameAudio audio;
 
 // Leaderboard settings
 const int MAX_LEADERBOARD_ENTRIES = 100;
@@ -319,7 +391,6 @@ void drawBoard(sf::RenderWindow& window)
             if (candyTexturesLoaded && board[row][col] >= 0 && board[row][col] < 5)
             {
                 const sf::Vector2u textureSize = candyTextures[board[row][col]].getSize();
-                // Calculate the scale manually (no Algorithm Library needed).
                 const float widthScale = 64.0f / static_cast<float>(textureSize.x);
                 const float heightScale = 64.0f / static_cast<float>(textureSize.y);
                 float fitScale = widthScale;
@@ -485,11 +556,13 @@ void selectCandy(int mouseX, int mouseY)
         {
             selectedRow = row;
             selectedCol = col;
+            audio.playSelect();
         }
         else if ((row == selectedRow && (col == selectedCol - 1 || col == selectedCol + 1)) ||
             (col == selectedCol && (row == selectedRow - 1 || row == selectedRow + 1)))
         {
             swapCandies(selectedRow, selectedCol, row, col);
+            audio.playSwap();
             checkMatches();
 
             if (hasMatches())
@@ -515,6 +588,7 @@ void selectCandy(int mouseX, int mouseY)
         {
             selectedRow = row;
             selectedCol = col;
+            audio.playSelect();
         }
     }
     else
@@ -1174,6 +1248,7 @@ void restartGame()
 
     initializeBoard();
     checkMatches();
+    audio.playBackgroundMusic();
 }
 
 int main()
@@ -1181,6 +1256,7 @@ int main()
     srand(static_cast<unsigned int>(time(nullptr)));
 
     loadCandyTextures();
+    audio.loadAudio();
 
     loadPersonalBests();
     loadLeaderboard();
@@ -1275,6 +1351,7 @@ int main()
             {
                 timeRemaining = 0.0f;
                 gameOver = true;
+                audio.playGameOver();
 
                 if (score > personalBest)
                 {
