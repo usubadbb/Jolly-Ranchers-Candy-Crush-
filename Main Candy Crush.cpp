@@ -204,23 +204,84 @@ void spawnTimeBonus()
     }
 }
 
+// Subtle fruit-candy atmosphere: soft color haze, tiny bubbles and sparkles.
+// These are lightweight SFML shapes, so no extra image assets are required.
+void drawThemeBackground(sf::RenderWindow& window)
+{
+    // Soft colored glow spots behind the board.
+    const sf::Color glowColors[5] = {
+        sf::Color(255, 75, 115, 18),
+        sf::Color(70, 190, 255, 16),
+        sf::Color(170, 90, 255, 17),
+        sf::Color(90, 235, 150, 15),
+        sf::Color(255, 190, 70, 14)
+    };
+
+    for (int i = 0; i < 5; ++i)
+    {
+        sf::CircleShape glow(145.0f + i * 8.0f);
+        glow.setOrigin({ glow.getRadius(), glow.getRadius() });
+        glow.setPosition({
+            110.0f + static_cast<float>((i * 239) % 950),
+            110.0f + static_cast<float>((i * 157) % 610)
+            });
+        glow.setFillColor(glowColors[i]);
+        window.draw(glow);
+    }
+
+    // Sparse, low-contrast candy bubbles across the background.
+    for (int i = 0; i < 34; ++i)
+    {
+        const float x = static_cast<float>((i * 137 + 41) % 1080);
+        const float y = static_cast<float>((i * 83 + 29) % 780);
+        const float radius = 2.0f + static_cast<float>(i % 4);
+
+        sf::CircleShape bubble(radius);
+        bubble.setPosition({ x, y });
+        bubble.setFillColor(sf::Color(255, 255, 255, 18));
+        bubble.setOutlineThickness(1.0f);
+        bubble.setOutlineColor(sf::Color(180, 220, 255, 22));
+        window.draw(bubble);
+    }
+
+    // A faint frame gives the play area a polished candy-wrapper feel.
+    sf::RectangleShape frame({ 700.0f, 700.0f });
+    frame.setPosition({ 42.0f, 42.0f });
+    frame.setFillColor(sf::Color::Transparent);
+    frame.setOutlineThickness(2.0f);
+    frame.setOutlineColor(sf::Color(150, 205, 255, 45));
+    window.draw(frame);
+}
+
 void drawBoard(sf::RenderWindow& window)
 {
     static sf::Font font("C:/Windows/Fonts/arial.ttf");
 
-    sf::Text scoreText(font, "Score: " + to_string(score), 26);
-    scoreText.setPosition({ 15.0f, 10.0f });
-    scoreText.setFillColor(sf::Color::White);
+    // Unified HUD strip: all three labels sit on one line, aligned to the board.
+    sf::RectangleShape hudPanel({ 675.0f, 46.0f });
+    hudPanel.setPosition({ 62.5f, 7.0f });
+    hudPanel.setFillColor(sf::Color(38, 35, 69, 235));
+    hudPanel.setOutlineThickness(1.0f);
+    hudPanel.setOutlineColor(sf::Color(150, 205, 255, 75));
+    window.draw(hudPanel);
+
+    sf::Text scoreText(font, "SCORE  " + to_string(score), 21);
+    scoreText.setFillColor(sf::Color(255, 225, 150));
+    scoreText.setPosition({ 78.0f, 15.0f });
     window.draw(scoreText);
 
-    sf::Text nameText(font, playerName, 24);
-    nameText.setFillColor(sf::Color(255, 220, 120));
-    nameText.setPosition({ 300.0f, 12.0f });
+    sf::Text nameText(font, playerName, 20);
+    nameText.setFillColor(sf::Color(190, 225, 255));
+    const sf::FloatRect nameBounds = nameText.getLocalBounds();
+    nameText.setPosition({ 400.0f - (nameBounds.position.x + nameBounds.size.x / 2.0f), 16.0f });
     window.draw(nameText);
 
-    sf::Text timerText(font, "Time: " + to_string(static_cast<int>(ceil(timeRemaining))), 26);
-    timerText.setPosition({ 665.0f, 10.0f });
-    timerText.setFillColor(sf::Color::White);
+    sf::Text timerText(font, "TIME  " + to_string(static_cast<int>(ceil(timeRemaining))), 21);
+    timerText.setFillColor(timeRemaining <= 10.0f
+        ? sf::Color(255, 125, 135)
+        : sf::Color(170, 255, 205));
+    const sf::FloatRect timerBounds = timerText.getLocalBounds();
+    timerText.setPosition({ 722.0f - (timerBounds.position.x + timerBounds.size.x), 15.0f });
     window.draw(timerText);
 
     const float cellSize = 75.0f;
@@ -233,8 +294,17 @@ void drawBoard(sf::RenderWindow& window)
         {
             sf::RectangleShape cell({ 73.0f, 73.0f });
             cell.setPosition({ startX + col * cellSize, startY + row * cellSize });
-            cell.setFillColor(sf::Color(65, 65, 95));
+            cell.setFillColor(sf::Color(49, 49, 82));
+            cell.setOutlineThickness(1.0f);
+            cell.setOutlineColor(sf::Color(150, 190, 255, 55));
             window.draw(cell);
+
+            // Very faint diagonal sheen on each tile.
+            sf::RectangleShape tileSheen({ 63.0f, 2.0f });
+            tileSheen.setPosition({ startX + col * cellSize + 5.0f,
+                                    startY + row * cellSize + 6.0f });
+            tileSheen.setFillColor(sf::Color(255, 255, 255, 16));
+            window.draw(tileSheen);
 
             if (board[row][col] == -1)
                 continue;
@@ -281,6 +351,20 @@ void drawBoard(sf::RenderWindow& window)
 
                 window.draw(candy);
             }
+
+            // Small glassy reflection: decorative only, the original candy artwork stays intact.
+            sf::CircleShape candyGlint(5.0f);
+            candyGlint.setPosition({ candyCenter.x - 16.0f * candyScale,
+                                     candyCenter.y - 19.0f * candyScale });
+            candyGlint.setScale({ 1.0f, 0.62f });
+            candyGlint.setFillColor(sf::Color(255, 255, 255, 105));
+            window.draw(candyGlint);
+
+            sf::CircleShape tinyGlint(2.2f);
+            tinyGlint.setPosition({ candyCenter.x + 9.0f * candyScale,
+                                    candyCenter.y - 21.0f * candyScale });
+            tinyGlint.setFillColor(sf::Color(255, 255, 255, 85));
+            window.draw(tinyGlint);
 
             // Keep the existing selection/match highlight visible above the sprite.
             if (matched[row][col] || (row == selectedRow && col == selectedCol))
@@ -912,36 +996,91 @@ void drawGameOver(sf::RenderWindow& window)
 void drawNameEntry(sf::RenderWindow& window)
 {
     static sf::Font font("C:/Windows/Fonts/arial.ttf");
-    window.clear(sf::Color(30, 30, 50));
 
-    sf::Text title(font, "CANDY CRUSH", 58);
-    title.setFillColor(sf::Color(255, 120, 160));
-    drawCenteredText(window, title, 550.0f, 145.0f);
+    // Reuse the exact soft glow, bubble and frame treatment used behind the game board.
+    window.clear(sf::Color(19, 17, 43));
+    drawThemeBackground(window);
 
-    sf::Text subtitle(font, "Enter your player name", 30);
-    subtitle.setFillColor(sf::Color::White);
-    drawCenteredText(window, subtitle, 550.0f, 285.0f);
+    // Main translucent-style title panel.
+    sf::RectangleShape panel({ 700.0f, 590.0f });
+    panel.setPosition({ 200.0f, 105.0f });
+    panel.setFillColor(sf::Color(34, 31, 66, 238));
+    panel.setOutlineThickness(2.0f);
+    panel.setOutlineColor(sf::Color(160, 205, 255, 105));
+    window.draw(panel);
 
-    sf::RectangleShape nameBox({ 420.0f, 60.0f });
-    nameBox.setPosition({ 340.0f, 350.0f });
-    nameBox.setFillColor(sf::Color(65, 65, 95));
-    nameBox.setOutlineThickness(3.0f);
-    nameBox.setOutlineColor(sf::Color(255, 220, 120));
+    // Colorful candy-like accents around the title.
+    const sf::Color candyColors[5] = {
+        sf::Color(255, 95, 125),
+        sf::Color(255, 185, 75),
+        sf::Color(155, 105, 235),
+        sf::Color(75, 175, 255),
+        sf::Color(100, 220, 145)
+    };
+
+    for (int i = 0; i < 5; ++i)
+    {
+        const float x = 285.0f + i * 132.0f;
+        sf::CircleShape candy(17.0f);
+        candy.setPosition({ x, 145.0f });
+        candy.setFillColor(candyColors[i]);
+        candy.setOutlineThickness(2.0f);
+        candy.setOutlineColor(sf::Color(255, 255, 255, 150));
+        window.draw(candy);
+
+        sf::CircleShape shine(5.0f);
+        shine.setPosition({ x + 5.0f, 149.0f });
+        shine.setFillColor(sf::Color(255, 255, 255, 165));
+        window.draw(shine);
+    }
+
+    sf::Text titleTop(font, "CANDY CRUSH:", 43);
+    titleTop.setLetterSpacing(1.12f);
+    titleTop.setFillColor(sf::Color(255, 225, 155));
+    drawCenteredText(window, titleTop, 550.0f, 205.0f);
+
+    sf::Text titleBottom(font, "JOLLY RANCHERS", 55);
+    titleBottom.setLetterSpacing(1.04f);
+    titleBottom.setFillColor(sf::Color(255, 125, 165));
+    drawCenteredText(window, titleBottom, 550.0f, 260.0f);
+
+    // Small cool-toned subtitle and separator.
+    sf::Text subtitle(font, "A FRUITY, SWEET MATCH-3 CHALLENGE", 20);
+    subtitle.setLetterSpacing(1.08f);
+    subtitle.setFillColor(sf::Color(175, 220, 255));
+    drawCenteredText(window, subtitle, 550.0f, 340.0f);
+
+    sf::RectangleShape separator({ 390.0f, 2.0f });
+    separator.setPosition({ 355.0f, 382.0f });
+    separator.setFillColor(sf::Color(170, 205, 255, 100));
+    window.draw(separator);
+
+    sf::Text prompt(font, "ENTER YOUR PLAYER NAME", 23);
+    prompt.setFillColor(sf::Color(255, 225, 160));
+    drawCenteredText(window, prompt, 550.0f, 415.0f);
+
+    sf::RectangleShape nameBox({ 430.0f, 62.0f });
+    nameBox.setPosition({ 335.0f, 462.0f });
+    nameBox.setFillColor(sf::Color(54, 51, 91));
+    nameBox.setOutlineThickness(2.0f);
+    nameBox.setOutlineColor(sf::Color(255, 190, 125, 210));
     window.draw(nameBox);
 
     string shownName = playerName.empty() ? "Type your name here..." : playerName;
+    sf::Text inputText(font, shownName, 25);
+    inputText.setFillColor(playerName.empty()
+        ? sf::Color(180, 185, 210)
+        : sf::Color::White);
+    drawCenteredText(window, inputText, 550.0f, 477.0f);
 
-    sf::Text inputText(font, shownName, 26);
-    inputText.setFillColor(playerName.empty() ? sf::Color(180, 180, 180) : sf::Color::White);
-    drawCenteredText(window, inputText, 550.0f, 365.0f);
+    sf::Text instruction(font, "PRESS ENTER TO START", 21);
+    instruction.setLetterSpacing(1.08f);
+    instruction.setFillColor(sf::Color(150, 255, 205));
+    drawCenteredText(window, instruction, 550.0f, 560.0f);
 
-    sf::Text instruction(font, "Press ENTER to start", 23);
-    instruction.setFillColor(sf::Color(180, 220, 255));
-    drawCenteredText(window, instruction, 550.0f, 455.0f);
-
-    sf::Text challenge(font, "Can you beat Maam Anousha's 1650 points?", 21);
-    challenge.setFillColor(sf::Color(255, 190, 100));
-    drawCenteredText(window, challenge, 550.0f, 535.0f);
+    sf::Text challenge(font, "Can you beat Maam Anousha's 1650 points?", 18);
+    challenge.setFillColor(sf::Color(255, 190, 125));
+    drawCenteredText(window, challenge, 550.0f, 635.0f);
 }
 
 // Load every player's Personal Best from the file.
@@ -1179,7 +1318,8 @@ int main()
             }
         }
 
-        window.clear(sf::Color(30, 30, 50));
+        window.clear(sf::Color(19, 17, 43));
+        drawThemeBackground(window);
 
         drawBoard(window);
 
