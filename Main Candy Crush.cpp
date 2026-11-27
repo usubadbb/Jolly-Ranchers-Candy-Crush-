@@ -55,6 +55,40 @@ int personalBest = 0;
 map<string, int> personalBests;
 const string PERSONAL_BEST_FILE = "personal_bests.txt";
 
+// Jolly Rancher candy artwork: indices match the candy IDs used by board[][].
+sf::Texture candyTextures[5];
+bool candyTexturesLoaded = false;
+
+bool loadCandyTextures()
+{
+    const string textureFiles[5] = {
+        "assets/watermelon.png", // 0: Watermelon
+        "assets/cherry.png",     // 1: Cherry
+        "assets/grape.png",      // 2: Grapes
+        "assets/blueberry.png",  // 3: Blueberry
+        "assets/green_apple.png" // 4: Green Apple
+    };
+
+    candyTexturesLoaded = true;
+
+    for (int i = 0; i < 5; i++)
+    {
+        if (!candyTextures[i].loadFromFile(textureFiles[i]))
+        {
+            cerr << "Could not load candy texture: " << textureFiles[i]
+                << ". Check that the assets folder is beside the program working directory." << endl;
+            candyTexturesLoaded = false;
+        }
+        else
+        {
+            candyTextures[i].setSmooth(true);
+        }
+    }
+
+    return candyTexturesLoaded;
+}
+
+
 // Leaderboard settings
 const int MAX_LEADERBOARD_ENTRIES = 100;
 const int DISPLAYED_LEADERBOARD_ENTRIES = 5;
@@ -205,32 +239,63 @@ void drawBoard(sf::RenderWindow& window)
             if (board[row][col] == -1)
                 continue;
 
-            sf::CircleShape candy(30.0f);
-            candy.setOrigin({ 30.0f, 30.0f });
-            candy.setScale({ candyAnimations[row][col].scale, candyAnimations[row][col].scale });
-            candy.setPosition({
+            const float candyScale = candyAnimations[row][col].scale;
+            const sf::Vector2f candyCenter(
                 candyAnimations[row][col].x + 30.0f,
                 candyAnimations[row][col].y + 30.0f
-                });
+            );
 
-            if (board[row][col] == 0) candy.setFillColor(sf::Color(252, 108, 133));
-            else if (board[row][col] == 1) candy.setFillColor(sf::Color(210, 10, 46));
-            else if (board[row][col] == 2) candy.setFillColor(sf::Color(150, 50, 200));
-            else if (board[row][col] == 3) candy.setFillColor(sf::Color::Blue);
-            else if (board[row][col] == 4) candy.setFillColor(sf::Color::Green);
-
-            if (matched[row][col])
+            // Draw the matching Jolly Rancher sprite, preserving its aspect ratio.
+            if (candyTexturesLoaded && board[row][col] >= 0 && board[row][col] < 5)
             {
-                candy.setOutlineThickness(4.0f);
-                candy.setOutlineColor(sf::Color::Cyan);
+                const sf::Vector2u textureSize = candyTextures[board[row][col]].getSize();
+                // Calculate the scale manually (no Algorithm Library needed).
+                const float widthScale = 64.0f / static_cast<float>(textureSize.x);
+                const float heightScale = 64.0f / static_cast<float>(textureSize.y);
+                float fitScale = widthScale;
+                if (heightScale < fitScale)
+                    fitScale = heightScale;
+
+                sf::Sprite candySprite(candyTextures[board[row][col]]);
+                candySprite.setOrigin({
+                    textureSize.x / 2.0f,
+                    textureSize.y / 2.0f
+                    });
+                candySprite.setScale({ fitScale * candyScale, fitScale * candyScale });
+                candySprite.setPosition(candyCenter);
+                window.draw(candySprite);
             }
-            else if (row == selectedRow && col == selectedCol)
+            else
             {
-                candy.setOutlineThickness(4.0f);
-                candy.setOutlineColor(sf::Color::Yellow);
+                // Colored-circle fallback if an image file cannot be loaded.
+                sf::CircleShape candy(30.0f);
+                candy.setOrigin({ 30.0f, 30.0f });
+                candy.setScale({ candyScale, candyScale });
+                candy.setPosition(candyCenter);
+
+                if (board[row][col] == 0) candy.setFillColor(sf::Color(252, 108, 133));
+                else if (board[row][col] == 1) candy.setFillColor(sf::Color(210, 10, 46));
+                else if (board[row][col] == 2) candy.setFillColor(sf::Color(150, 50, 200));
+                else if (board[row][col] == 3) candy.setFillColor(sf::Color::Blue);
+                else if (board[row][col] == 4) candy.setFillColor(sf::Color::Green);
+
+                window.draw(candy);
             }
 
-            window.draw(candy);
+            // Keep the existing selection/match highlight visible above the sprite.
+            if (matched[row][col] || (row == selectedRow && col == selectedCol))
+            {
+                sf::CircleShape highlight(30.0f);
+                highlight.setOrigin({ 30.0f, 30.0f });
+                highlight.setPosition(candyCenter);
+                highlight.setScale({ candyScale, candyScale });
+                highlight.setFillColor(sf::Color::Transparent);
+                highlight.setOutlineThickness(3.0f);
+                highlight.setOutlineColor(
+                    matched[row][col] ? sf::Color::Cyan : sf::Color::Yellow
+                );
+                window.draw(highlight);
+            }
 
             // Display a golden + badge on Time Bonus Candies.
             if (timeBonus[row][col])
@@ -534,8 +599,6 @@ void calculateScore()
             }
         }
     }
-    isRemovingMatches = true;
-    isResolving = true;
 }
 
 void resolveMatches()
@@ -977,6 +1040,8 @@ void restartGame()
 int main()
 {
     srand(static_cast<unsigned int>(time(nullptr)));
+
+    loadCandyTextures();
 
     loadPersonalBests();
     loadLeaderboard();
