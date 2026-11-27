@@ -8,6 +8,7 @@
 #include <string>
 #include <cctype>
 #include <optional>
+#include <map>
 
 using namespace std;
 
@@ -45,6 +46,10 @@ int selectedCol = -1;
 string playerName = "";
 int score = 0;
 int personalBest = 0;
+
+// Individual Personal Best records
+map<string, int> personalBests;
+const string PERSONAL_BEST_FILE = "personal_bests.txt";
 
 // Leaderboard settings
 const int MAX_LEADERBOARD_ENTRIES = 100;
@@ -693,22 +698,70 @@ void drawNameEntry(sf::RenderWindow& window)
     drawCenteredText(window, challenge, 550.0f, 535.0f);
 }
 
-void loadPersonalBest()
+// Load every player's Personal Best from the file.
+void loadPersonalBests()
 {
-    ifstream inputFile("personal_best.txt");
+    personalBests.clear();
+
+    ifstream inputFile(PERSONAL_BEST_FILE);
+    string line;
+
     if (inputFile.is_open())
     {
-        inputFile >> personalBest;
-        if (!inputFile)
-            personalBest = 0;
+        while (getline(inputFile, line))
+        {
+            size_t separator = line.rfind('|');
+
+            if (separator == string::npos)
+                continue;
+
+            string name = line.substr(0, separator);
+            string scoreText = line.substr(separator + 1);
+
+            if (name.empty())
+                continue;
+
+            try
+            {
+                int savedScore = stoi(scoreText);
+
+                if (personalBests.find(name) == personalBests.end() ||
+                    savedScore > personalBests[name])
+                {
+                    personalBests[name] = savedScore;
+                }
+            }
+            catch (...)
+            {
+                // Ignore malformed Personal Best entries.
+            }
+        }
     }
 }
 
+// Retrieve the Personal Best belonging to the current player.
+void loadPersonalBest()
+{
+    personalBest = 0;
+
+    auto playerRecord = personalBests.find(playerName);
+    if (playerRecord != personalBests.end())
+        personalBest = playerRecord->second;
+}
+
+// Save all players' Personal Best records.
 void savePersonalBest()
 {
-    ofstream outputFile("personal_best.txt");
-    if (outputFile.is_open())
-        outputFile << personalBest;
+    ofstream outputFile(PERSONAL_BEST_FILE);
+
+    if (!outputFile.is_open())
+    {
+        cerr << "Could not save " << PERSONAL_BEST_FILE << endl;
+        return;
+    }
+
+    for (const auto& entry : personalBests)
+        outputFile << entry.first << "|" << entry.second << '\n';
 }
 
 void restartGame()
@@ -730,7 +783,7 @@ void restartGame()
 int main()
 {
     srand(static_cast<unsigned int>(time(nullptr)));
-    loadPersonalBest();
+    loadPersonalBests();
     loadLeaderboard();
     initializeBoard();
     checkMatches();
@@ -763,6 +816,10 @@ int main()
                         // Keep the special leaderboard identity reserved for Maam Anousha.
                         if (playerName == SPECIAL_PLAYER_NAME)
                             playerName = "Player";
+
+                        // Load this particular player's Personal Best.
+                        loadPersonalBest();
+
                         nameEntryScreen = false;
                         restartGame();
                     }
@@ -811,6 +868,10 @@ int main()
                 if (score > personalBest)
                 {
                     personalBest = score;
+
+                    // Update this player's individual Personal Best.
+                    personalBests[playerName] = personalBest;
+
                     savePersonalBest();
                 }
                 submitScoreToLeaderboard();
