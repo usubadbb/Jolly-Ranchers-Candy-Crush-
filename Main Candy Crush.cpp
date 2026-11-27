@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <cmath>
+#include <fstream>
 
 using namespace std;
 
@@ -46,6 +47,7 @@ int selectedRow = -1;
 int selectedCol = -1;
 
 int score = 0;
+int personalBest = 0;
 
 // Game timer (Member 2 - Step 11)
 const float GAME_DURATION_SECONDS = 60.0f;
@@ -651,14 +653,51 @@ void drawGameOver(sf::RenderWindow& window)
     rankText.setPosition({ 245.0f, 425.0f });
     window.draw(rankText);
 
+    sf::Text personalBestText(
+        font,
+        "Personal Best: " + to_string(personalBest),
+        30
+    );
+    personalBestText.setFillColor(sf::Color(255, 180, 100));
+    personalBestText.setPosition({ 265.0f, 475.0f });
+    window.draw(personalBestText);
+
     sf::Text timeUpText(font, "Time's up!", 28);
     timeUpText.setFillColor(sf::Color::White);
-    timeUpText.setPosition({ 335.0f, 490.0f });
+    timeUpText.setPosition({ 335.0f, 535.0f });
     window.draw(timeUpText);
+}
+
+// Load the saved personal-best score when the game starts.
+void loadPersonalBest()
+{
+    ifstream inputFile("personal_best.txt");
+
+    if (inputFile.is_open())
+    {
+        inputFile >> personalBest;
+
+        if (!inputFile)
+        {
+            personalBest = 0;
+        }
+    }
+}
+
+// Save the personal-best score so it remains available next time.
+void savePersonalBest()
+{
+    ofstream outputFile("personal_best.txt");
+
+    if (outputFile.is_open())
+    {
+        outputFile << personalBest;
+    }
 }
 
 int main()
 {
+    loadPersonalBest();
     initializeBoard();
     checkMatches();
     sf::RenderWindow window(
@@ -681,6 +720,13 @@ int main()
             {
                 timeRemaining = 0.0f;
                 gameOver = true;
+
+                // Update and save the personal best if this score is a record.
+                if (score > personalBest)
+                {
+                    personalBest = score;
+                    savePersonalBest();
+                }
             }
         }
 
@@ -703,48 +749,6 @@ int main()
                 }
             }
         }
-        // Update all active animations
-        updateAnimations();
-        // Check whether the board is resolving a cascade
-        if (isResolving && allAnimationsFinished())
-        {
-            // Check whether matched candies have finished shrinking
-            if (isRemovingMatches)
-            {
-                // Remove candies after their disappearance animation
-                removeMatchedCandies();
-                // Clear previous match information
-                for (int row = 0; row < ROWS; row++)
-                {
-                    for (int col = 0; col < COLS; col++)
-                    {
-                        matched[row][col] = false;
-                    }
-                }
-                // Finish the shrinking phase
-                isRemovingMatches = false;
-                // Apply gravity
-                applyGravity();
-                // Generate new candies
-                refillBoard();
-            }
-            else
-            {
-                // Check for new matches after falling animations
-                checkMatches();
-                if (hasMatches())
-                {
-                    // Start another cascade
-                    resolveMatches();
-                }
-                else
-                {
-                    // No more matches: finish resolving
-                    isResolving = false;
-                }
-            }
-        }
-
         // Stop animation and cascade updates after the game ends.
         if (!gameOver)
         {
