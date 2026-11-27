@@ -1,402 +1,344 @@
-
 #include <SFML/Graphics.hpp>
 #include <iostream>
 #include <cstdlib>
 #include <ctime>
+#include <cmath>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <algorithm>
+#include <cctype>
 
 using namespace std;
 
-// Board dimensions and are Global Variables
+struct CandyAnimation
+{
+    float x, y;
+    float targetX, targetY;
+    float startX, startY;
+    float scale, startScale, targetScale;
+    float progress;
+    bool isAnimating;
+};
+
+struct LeaderboardEntry
+{
+    string playerName;
+    int playerScore;
+};
+
+// Candy animation settings
+sf::Clock animationClock;
+const float ANIMATION_DURATION = 0.3f;
+
+// Board settings
 const int ROWS = 9;
 const int COLS = 9;
-
-// Stores the candies
 int board[ROWS][COLS];
-
-// Stores whether a candy is part of a match
+CandyAnimation candyAnimations[ROWS][COLS];
 bool matched[ROWS][COLS];
 
-// Stores the currently selected candy, which is -1 when nothing is selected 
 int selectedRow = -1;
 int selectedCol = -1;
 
-// Stores the player's score
+// Player and score information
+string playerName = "";
 int score = 0;
+int personalBest = 0;
 
-// Function declaration (prototype as checkMatch lies below selectCandy)
+// Leaderboard settings
+const int MAX_LEADERBOARD_ENTRIES = 100;
+const int DISPLAYED_LEADERBOARD_ENTRIES = 5;
+const string LEADERBOARD_FILE = "leaderboard.txt";
+const string SPECIAL_PLAYER_NAME = "Maam Anousha";
+const int SPECIAL_PLAYER_SCORE = 1650;
+LeaderboardEntry leaderboard[MAX_LEADERBOARD_ENTRIES];
+int leaderboardCount = 0;
+
+// Game timer
+const float GAME_DURATION_SECONDS = 60.0f;
+float timeRemaining = GAME_DURATION_SECONDS;
+sf::Clock gameTimerClock;
+
+// Game states
+bool nameEntryScreen = true;
+bool gameOver = false;
+bool scoreSubmitted = false;
+bool isResolving = false;
+bool isRemovingMatches = false;
+
+// Function declarations
 void checkMatches();
-
-// Function declaration or prototype
 void removeMatchedCandies();
-
-// Function declaration or prototype
 void applyGravity();
-
-// Function declaration or prototype
 void refillBoard();
-
-// Function declaration or prototype
+void updateAnimations();
+bool allAnimationsFinished();
 void resolveMatches();
-
-// Function declaration or prototype
 void calculateScore();
-
-// Function declaration or prototype
 bool hasMatches();
+void updateGameTimer();
+void drawGameOver(sf::RenderWindow& window);
+string getPerformanceRank();
+void restartGame();
+void loadPersonalBest();
+void savePersonalBest();
+void loadLeaderboard();
+void saveLeaderboard();
+void submitScoreToLeaderboard();
+void sortLeaderboard();
+void drawLeaderboard(sf::RenderWindow& window, float startY);
+void drawNameEntry(sf::RenderWindow& window);
 
-// Initialize the board without automatic matches
+// Initialize a board without starting with automatic matches.
 void initializeBoard()
 {
-    // Seed the random number generator
-    srand(time(0));
-
-    // Go through every row
     for (int row = 0; row < ROWS; row++)
     {
-        // Go through every column
         for (int col = 0; col < COLS; col++)
         {
-            // Temporary variable for the new candy
             int candy;
-
-            // Keep generating candies until a valid one is found
             do
             {
-                // Generate a random candy
                 candy = rand() % 5;
-
             } while (
-
-                // Check for a horizontal match
-                (col >= 2 &&
-                    board[row][col - 1] == candy &&
-                    board[row][col - 2] == candy)
-
-                ||
-
-                // Check for a vertical match
-                (row >= 2 &&
-                    board[row - 1][col] == candy &&
-                    board[row - 2][col] == candy)
-
+                (col >= 2 && board[row][col - 1] == candy && board[row][col - 2] == candy) ||
+                (row >= 2 && board[row - 1][col] == candy && board[row - 2][col] == candy)
                 );
 
-            // Place the valid candy on the board
             board[row][col] = candy;
+            candyAnimations[row][col].x = 70.0f + col * 75.0f;
+            candyAnimations[row][col].y = 70.0f + row * 75.0f;
+            candyAnimations[row][col].startX = candyAnimations[row][col].x;
+            candyAnimations[row][col].startY = candyAnimations[row][col].y;
+            candyAnimations[row][col].targetX = candyAnimations[row][col].x;
+            candyAnimations[row][col].targetY = candyAnimations[row][col].y;
+            candyAnimations[row][col].progress = 1.0f;
+            candyAnimations[row][col].scale = 1.0f;
+            candyAnimations[row][col].startScale = 1.0f;
+            candyAnimations[row][col].targetScale = 1.0f;
+            candyAnimations[row][col].isAnimating = false;
+            matched[row][col] = false;
         }
     }
 }
 
-// Draw the candy board
 void drawBoard(sf::RenderWindow& window)
 {
-    // Create a font
     static sf::Font font("C:/Windows/Fonts/arial.ttf");
 
-    // Create score text
-    sf::Text scoreText(font, "Score: " + to_string(score), 30);
-
-    // Position the score
-    scoreText.setPosition({ 20.0f, 10.0f });
-
-    // Set score colour
+    sf::Text scoreText(font, "Score: " + to_string(score), 26);
+    scoreText.setPosition({ 15.0f, 10.0f });
     scoreText.setFillColor(sf::Color::White);
-
-    // Draw the score
     window.draw(scoreText);
 
-    // Size of each candy cell, a circle with a diameter of 60 pixels will lie in each cell.
-    float cellSize = 75.0f;
+    sf::Text nameText(font, playerName, 24);
+    nameText.setFillColor(sf::Color(255, 220, 120));
+    nameText.setPosition({ 300.0f, 12.0f });
+    window.draw(nameText);
 
-    // Starting position of the board, centering the grid of candies within the board, leaving a total of 125 pixels horizontally, and vertically.
-    float startX = 62.5f;
-    float startY = 62.5f;
+    sf::Text timerText(font, "Time: " + to_string(static_cast<int>(ceil(timeRemaining))), 26);
+    timerText.setPosition({ 665.0f, 10.0f });
+    timerText.setFillColor(sf::Color::White);
+    window.draw(timerText);
 
-    // Go through every row
+    const float cellSize = 75.0f;
+    const float startX = 62.5f;
+    const float startY = 62.5f;
+
     for (int row = 0; row < ROWS; row++)
     {
-        // Go through every column
         for (int col = 0; col < COLS; col++)
         {
-            // Create the background square (Leaves a total of two pixels)
             sf::RectangleShape cell({ 73.0f, 73.0f });
-
-            // Position the square
-            cell.setPosition({
-                startX + col * cellSize,
-                startY + row * cellSize
-                });
-
-            // Set the square's colour
+            cell.setPosition({ startX + col * cellSize, startY + row * cellSize });
             cell.setFillColor(sf::Color(65, 65, 95));
-
-            // Draw the square
             window.draw(cell);
 
-            // Skip drawing the candy if the position is empty
             if (board[row][col] == -1)
-            {
                 continue;
-            }
 
-            // Create a circle for the candy
             sf::CircleShape candy(30.0f);
+            candy.setOrigin({ 30.0f, 30.0f });
+            candy.setScale({ candyAnimations[row][col].scale, candyAnimations[row][col].scale });
+            candy.setPosition({ candyAnimations[row][col].x + 30.0f, candyAnimations[row][col].y + 30.0f });
 
-            // Position the candy inside its cell
-            candy.setPosition({
-                startX + col * cellSize + 7.5f,
-                startY + row * cellSize + 7.5f
-                });
+            if (board[row][col] == 0) candy.setFillColor(sf::Color(252, 108, 133));
+            else if (board[row][col] == 1) candy.setFillColor(sf::Color(210, 10, 46));
+            else if (board[row][col] == 2) candy.setFillColor(sf::Color(150, 50, 200));
+            else if (board[row][col] == 3) candy.setFillColor(sf::Color::Blue);
+            else if (board[row][col] == 4) candy.setFillColor(sf::Color::Green);
 
-            // Choose colour based on candy number
-            if (board[row][col] == 0)
-            {
-                candy.setFillColor(sf::Color(252, 108, 133));
-            }
-            else if (board[row][col] == 1)
-            {
-                candy.setFillColor(sf::Color(210, 10, 46));
-            }
-            else if (board[row][col] == 2)
-            {
-                candy.setFillColor(sf::Color(150, 50, 200));
-            }
-            else if (board[row][col] == 3)
-            {
-                candy.setFillColor(sf::Color::Blue);
-            }
-            else if (board[row][col] == 4)
-            {
-                candy.setFillColor(sf::Color::Green);
-            }
-
-            // Highlight matched candies
             if (matched[row][col])
             {
                 candy.setOutlineThickness(4.0f);
                 candy.setOutlineColor(sf::Color::Cyan);
             }
-
-            // Highlight the selected candy
             else if (row == selectedRow && col == selectedCol)
             {
                 candy.setOutlineThickness(4.0f);
                 candy.setOutlineColor(sf::Color::Yellow);
             }
-
-            // Draw the candy on the window
             window.draw(candy);
         }
     }
 }
 
-// Swap the positions of two candies
+float lerp(float start, float end, float t)
+{
+    return start + (end - start) * t;
+}
+
+void updateAnimations()
+{
+    float deltaTime = animationClock.restart().asSeconds();
+    for (int row = 0; row < ROWS; row++)
+    {
+        for (int col = 0; col < COLS; col++)
+        {
+            if (!candyAnimations[row][col].isAnimating)
+                continue;
+
+            CandyAnimation& animation = candyAnimations[row][col];
+            animation.progress += deltaTime / ANIMATION_DURATION;
+            if (animation.progress > 1.0f)
+                animation.progress = 1.0f;
+
+            animation.x = lerp(animation.startX, animation.targetX, animation.progress);
+            animation.y = lerp(animation.startY, animation.targetY, animation.progress);
+            animation.scale = lerp(animation.startScale, animation.targetScale, animation.progress);
+
+            if (animation.progress >= 1.0f)
+                animation.isAnimating = false;
+        }
+    }
+}
+
+bool allAnimationsFinished()
+{
+    for (int row = 0; row < ROWS; row++)
+        for (int col = 0; col < COLS; col++)
+            if (candyAnimations[row][col].isAnimating)
+                return false;
+    return true;
+}
+
 void swapCandies(int row1, int col1, int row2, int col2)
 {
-    // Temporarily store the first candy
     int temp = board[row1][col1];
-
-    // Put the second candy in the first position
     board[row1][col1] = board[row2][col2];
-
-    // Put the first candy in the second position
     board[row2][col2] = temp;
 }
 
-// Select a candy using mouse coordinates
 void selectCandy(int mouseX, int mouseY)
 {
-    float cellSize = 75.0f;
-    float startX = 62.5f;
-    float startY = 62.5f;
+    if (isResolving || timeRemaining <= 0.0f)
+        return;
 
-    // Find the row and column clicked by the mouse
-    int col = (mouseX - startX) / cellSize;
-    int row = (mouseY - startY) / cellSize;
+    const float cellSize = 75.0f;
+    const float startX = 62.5f;
+    const float startY = 62.5f;
+    int col = static_cast<int>((mouseX - startX) / cellSize);
+    int row = static_cast<int>((mouseY - startY) / cellSize);
 
-    // Check if the click is inside the board
-    if (row >= 0 && row < ROWS &&
-        col >= 0 && col < COLS)
+    if (row >= 0 && row < ROWS && col >= 0 && col < COLS)
     {
-        // If no candy is currently selected
         if (selectedRow == -1 && selectedCol == -1)
         {
             selectedRow = row;
             selectedCol = col;
         }
-        else
+        else if ((row == selectedRow && (col == selectedCol - 1 || col == selectedCol + 1)) ||
+            (col == selectedCol && (row == selectedRow - 1 || row == selectedRow + 1)))
         {
-            // Check whether the second candy is adjacent or one-plus (either same row, or same column)
-            if ((row == selectedRow &&
-                (col == selectedCol - 1 || col == selectedCol + 1))
-                ||
-                (col == selectedCol &&
-                    (row == selectedRow - 1 || row == selectedRow + 1)))
-            {
-                // Swap the two candies
+            swapCandies(selectedRow, selectedCol, row, col);
+            checkMatches();
+            if (hasMatches())
+                resolveMatches();
+            else
                 swapCandies(selectedRow, selectedCol, row, col);
 
-                // Detect matches after the swap
-                checkMatches();
-
-                // Check whether the swap created a match
-                if (hasMatches())
-                {
-                    // Resolve matches, gravity and cascading reactions
-                    resolveMatches();
-                }
-                else
-                {
-                    // Reverse the swap because no match was created
-                    swapCandies(selectedRow, selectedCol, row, col);
-                }
-
-                // Clear the selection after a swap has been made
-                selectedRow = -1;
-                selectedCol = -1;
-            }
-            else
-            {
-                // Select the newly clicked candy instead (without making changes diagonally), any diagonal clicks will result in a selection (Yellow Outline).
-                selectedRow = row;
-                selectedCol = col;
-            }
+            selectedRow = -1;
+            selectedCol = -1;
+        }
+        else
+        {
+            selectedRow = row;
+            selectedCol = col;
         }
     }
-    else // If a click has been made outside the board
+    else
     {
         selectedRow = -1;
         selectedCol = -1;
     }
 }
 
-// Detecting horizontal matches
 void checkHorizontalMatches()
 {
-    // Go through every row
     for (int row = 0; row < ROWS; row++)
-    {
-        // Go through every column, stopping before the last two columns (at 7) because lets say if we're at column 9, the program would look for column 10 and column 11, which do not exist.
         for (int col = 0; col < COLS - 2; col++)
-        {
-            // Check whether three consecutive candies are identical
-            if (board[row][col] == board[row][col + 1] &&
-                board[row][col] == board[row][col + 2])
-            {
-                // Mark all three candies as matched
-                matched[row][col] = true;
-                matched[row][col + 1] = true;
-                matched[row][col + 2] = true;
-            }
-        }
-    }
+            if (board[row][col] != -1 && board[row][col] == board[row][col + 1] && board[row][col] == board[row][col + 2])
+                matched[row][col] = matched[row][col + 1] = matched[row][col + 2] = true;
 }
 
-// Detecting vertical matches by reversing the outerloop with columns instead of using rows
 void checkVerticalMatches()
 {
-    // Go through every column
     for (int col = 0; col < COLS; col++)
-    {
-        // Go through every row, stopping before the last two rows
         for (int row = 0; row < ROWS - 2; row++)
-        {
-            // Check whether three consecutive candies are identical
-            if (board[row][col] == board[row + 1][col] &&
-                board[row][col] == board[row + 2][col])
-            {
-                // Mark all three candies as matched
-                matched[row][col] = true;
-                matched[row + 1][col] = true;
-                matched[row + 2][col] = true;
-            }
-        }
-    }
+            if (board[row][col] != -1 && board[row][col] == board[row + 1][col] && board[row][col] == board[row + 2][col])
+                matched[row][col] = matched[row + 1][col] = matched[row + 2][col] = true;
 }
 
-// The Horizontal and Vertical Matches have been merged and will reset each time.
 void checkMatches()
 {
-    // Reset the matched array
     for (int row = 0; row < ROWS; row++)
-    {
         for (int col = 0; col < COLS; col++)
-        {
             matched[row][col] = false;
-        }
-    }
-
-    // Detect horizontal matches
     checkHorizontalMatches();
-
-    // Detect vertical matches
     checkVerticalMatches();
 }
 
-// Check whether any matches exist
 bool hasMatches()
 {
-    // Go through every row
     for (int row = 0; row < ROWS; row++)
-    {
-        // Go through every column
         for (int col = 0; col < COLS; col++)
-        {
-            // Check whether this position is matched
             if (matched[row][col])
-            {
                 return true;
-            }
-        }
-    }
-
-    // No matches were found
     return false;
 }
 
-// Remove matched candies
 void removeMatchedCandies()
 {
-    // Go through every row
     for (int row = 0; row < ROWS; row++)
-    {
-        // Go through every column
         for (int col = 0; col < COLS; col++)
-        {
-            // Check whether this candy is matched
             if (matched[row][col])
-            {
-                // Remove the candy
                 board[row][col] = -1;
-            }
-        }
-    }
 }
 
-// Applying gravity to the board after removing matched candies.
 void applyGravity()
 {
-    // Go through every column
     for (int col = 0; col < COLS; col++)
     {
-        // Start at the bottom row
         int writeRow = ROWS - 1;
-
-        // Search upwards through the column
         for (int row = ROWS - 1; row >= 0; row--)
         {
-            // Check whether the position contains a candy
             if (board[row][col] != -1)
             {
-                // Move the candy down to the available position
                 board[writeRow][col] = board[row][col];
-
-                // Move the available position upwards
+                candyAnimations[writeRow][col] = candyAnimations[row][col];
+                candyAnimations[writeRow][col].startX = candyAnimations[writeRow][col].x;
+                candyAnimations[writeRow][col].startY = candyAnimations[writeRow][col].y;
+                candyAnimations[writeRow][col].targetX = 62.5f + col * 75.0f + 7.5f;
+                candyAnimations[writeRow][col].targetY = 62.5f + writeRow * 75.0f + 7.5f;
+                candyAnimations[writeRow][col].startScale = candyAnimations[writeRow][col].scale;
+                candyAnimations[writeRow][col].targetScale = 1.0f;
+                candyAnimations[writeRow][col].progress = 0.0f;
+                candyAnimations[writeRow][col].isAnimating =
+                    (candyAnimations[writeRow][col].startY != candyAnimations[writeRow][col].targetY);
                 writeRow--;
             }
         }
-
-        // Fill all remaining positions at the top with -1
         while (writeRow >= 0)
         {
             board[writeRow][col] = -1;
@@ -405,135 +347,480 @@ void applyGravity()
     }
 }
 
-// Refill empty spaces with new candies
 void refillBoard()
 {
-    // Go through every row
     for (int row = 0; row < ROWS; row++)
     {
-        // Go through every column
         for (int col = 0; col < COLS; col++)
         {
-            // Check whether the position is empty
             if (board[row][col] == -1)
             {
-                // Generate a new random candy
                 board[row][col] = rand() % 5;
+                CandyAnimation& animation = candyAnimations[row][col];
+                animation.scale = animation.startScale = animation.targetScale = 1.0f;
+                animation.targetX = 62.5f + col * 75.0f + 7.5f;
+                animation.targetY = 62.5f + row * 75.0f + 7.5f;
+                animation.startX = animation.targetX;
+                animation.startY = animation.targetY - (row + 1) * 75.0f - 60.0f;
+                animation.x = animation.startX;
+                animation.y = animation.startY;
+                animation.progress = 0.0f;
+                animation.isAnimating = true;
             }
         }
     }
 }
 
-// Calculate points for matched candies
 void calculateScore()
 {
-    // Go through every row
+    for (int row = 0; row < ROWS; row++)
+        for (int col = 0; col < COLS; col++)
+            if (matched[row][col])
+                score += 10;
+}
+
+void resolveMatches()
+{
+    calculateScore();
     for (int row = 0; row < ROWS; row++)
     {
-        // Go through every column
         for (int col = 0; col < COLS; col++)
         {
-            // Check whether this candy is matched
             if (matched[row][col])
             {
-                // Award 10 points
-                score += 10;
+                CandyAnimation& animation = candyAnimations[row][col];
+                animation.startX = animation.targetX = animation.x;
+                animation.startY = animation.targetY = animation.y;
+                animation.startScale = animation.scale;
+                animation.targetScale = 0.0f;
+                animation.progress = 0.0f;
+                animation.isAnimating = true;
             }
         }
+    }
+    isRemovingMatches = true;
+    isResolving = true;
+}
+
+void updateGameTimer()
+{
+    if (timeRemaining > 0.0f)
+    {
+        timeRemaining -= gameTimerClock.restart().asSeconds();
+        if (timeRemaining < 0.0f)
+            timeRemaining = 0.0f;
+    }
+    else
+        gameTimerClock.restart();
+}
+
+string getPerformanceRank()
+{
+    if (score >= 1000) return "Candy Champion";
+    if (score >= 500) return "Sweet Specialist";
+    return "Candy Rookie";
+}
+
+// Keep leaderboard entries ordered from highest to lowest score.
+void sortLeaderboard()
+{
+    sort(leaderboard, leaderboard + leaderboardCount,
+        [](const LeaderboardEntry& a, const LeaderboardEntry& b)
+        {
+            if (a.playerScore != b.playerScore)
+                return a.playerScore > b.playerScore;
+            return a.playerName < b.playerName;
+        });
+}
+
+// Add Maam Anousha if she is not already present. Her saved score is retained.
+void ensureSpecialPlayerExists()
+{
+    for (int i = 0; i < leaderboardCount; i++)
+    {
+        if (leaderboard[i].playerName == SPECIAL_PLAYER_NAME)
+            return;
+    }
+
+    if (leaderboardCount < MAX_LEADERBOARD_ENTRIES)
+    {
+        leaderboard[leaderboardCount].playerName = SPECIAL_PLAYER_NAME;
+        leaderboard[leaderboardCount].playerScore = SPECIAL_PLAYER_SCORE;
+        leaderboardCount++;
     }
 }
 
-// Automatically resolve cascading matches
-void resolveMatches()
+void loadLeaderboard()
 {
-    // Keep repeating until no matches remain
-    while (true)
+    leaderboardCount = 0;
+    ifstream inputFile(LEADERBOARD_FILE);
+    string line;
+
+    if (inputFile.is_open())
     {
-        // Detect all current matches
-        checkMatches();
-
-        // Check whether at least one match exists
-        bool foundMatch = false;
-
-        // Go through every row
-        for (int row = 0; row < ROWS; row++)
+        while (getline(inputFile, line) && leaderboardCount < MAX_LEADERBOARD_ENTRIES)
         {
-            // Go through every column
-            for (int col = 0; col < COLS; col++)
+            size_t separator = line.rfind('|');
+            if (separator == string::npos)
+                continue;
+
+            string name = line.substr(0, separator);
+            string scoreText = line.substr(separator + 1);
+            if (name.empty())
+                continue;
+
+            try
             {
-                // Check whether this position is matched
-                if (matched[row][col])
+                int savedScore = stoi(scoreText);
+                bool alreadyExists = false;
+                for (int i = 0; i < leaderboardCount; i++)
                 {
-                    foundMatch = true;
+                    if (leaderboard[i].playerName == name)
+                    {
+                        leaderboard[i].playerScore = max(leaderboard[i].playerScore, savedScore);
+                        alreadyExists = true;
+                        break;
+                    }
+                }
+                if (!alreadyExists)
+                {
+                    leaderboard[leaderboardCount].playerName = name;
+                    leaderboard[leaderboardCount].playerScore = savedScore;
+                    leaderboardCount++;
                 }
             }
+            catch (...)
+            {
+                // Ignore malformed leaderboard lines.
+            }
         }
+    }
 
-        // Stop if no matches were found
-        if (!foundMatch)
+    ensureSpecialPlayerExists();
+    sortLeaderboard();
+    saveLeaderboard();
+}
+
+void saveLeaderboard()
+{
+    ofstream outputFile(LEADERBOARD_FILE);
+    if (!outputFile.is_open())
+    {
+        cerr << "Could not save " << LEADERBOARD_FILE << endl;
+        return;
+    }
+
+    sortLeaderboard();
+    for (int i = 0; i < leaderboardCount; i++)
+        outputFile << leaderboard[i].playerName << "|" << leaderboard[i].playerScore << '\n';
+}
+
+// Update a player's best leaderboard result without creating duplicate names.
+void submitScoreToLeaderboard()
+{
+    if (scoreSubmitted || playerName.empty())
+        return;
+
+    bool foundPlayer = false;
+    for (int i = 0; i < leaderboardCount; i++)
+    {
+        if (leaderboard[i].playerName == playerName)
         {
+            if (score > leaderboard[i].playerScore)
+                leaderboard[i].playerScore = score;
+            foundPlayer = true;
             break;
         }
-
-        // Calculate points for matched candies
-        calculateScore();
-
-        // Remove matching candies
-        removeMatchedCandies();
-
-        // Apply gravity
-        applyGravity();
-
-        // Refill empty spaces
-        refillBoard();
     }
+
+    if (!foundPlayer && leaderboardCount < MAX_LEADERBOARD_ENTRIES)
+    {
+        leaderboard[leaderboardCount].playerName = playerName;
+        leaderboard[leaderboardCount].playerScore = score;
+        leaderboardCount++;
+    }
+
+    ensureSpecialPlayerExists();
+    sortLeaderboard();
+    saveLeaderboard();
+    scoreSubmitted = true;
+}
+
+void drawLeaderboard(sf::RenderWindow& window, float startY)
+{
+    static sf::Font font("C:/Windows/Fonts/arial.ttf");
+
+    sf::Text heading(font, "LEADERBOARD", 26);
+    heading.setFillColor(sf::Color(255, 215, 0));
+    heading.setPosition({ 770.0f, startY });
+    window.draw(heading);
+
+    for (int i = 0; i < DISPLAYED_LEADERBOARD_ENTRIES; i++)
+    {
+        string line;
+        sf::Color color = sf::Color::White;
+        if (i < leaderboardCount)
+        {
+            line = to_string(i + 1) + ".  " + leaderboard[i].playerName + "  -  " +
+                to_string(leaderboard[i].playerScore);
+            if (leaderboard[i].playerName == playerName)
+                color = sf::Color(120, 255, 150);
+            else if (leaderboard[i].playerName == SPECIAL_PLAYER_NAME)
+                color = sf::Color(255, 190, 100);
+        }
+        else
+            line = to_string(i + 1) + ".  ---";
+
+        sf::Text entryText(font, line, 18);
+        entryText.setFillColor(color);
+        entryText.setPosition({ 770.0f, startY + 48.0f + i * 42.0f });
+        window.draw(entryText);
+    }
+}
+
+void drawGameOver(sf::RenderWindow& window)
+{
+    static sf::Font font("C:/Windows/Fonts/arial.ttf");
+    sf::RectangleShape overlay({ 1100.0f, 800.0f });
+    overlay.setFillColor(sf::Color(0, 0, 0, 215));
+    window.draw(overlay);
+
+    sf::Text title(font, "GAME OVER", 52);
+    title.setFillColor(sf::Color::White);
+    title.setPosition({ 275.0f, 35.0f });
+    window.draw(title);
+
+    sf::Text playerText(font, playerName + "'s Score: " + to_string(score), 28);
+    playerText.setFillColor(sf::Color(255, 220, 100));
+    playerText.setPosition({ 245.0f, 105.0f });
+    window.draw(playerText);
+
+    string rank = getPerformanceRank();
+    sf::Text rankText(font, "Rank: " + rank, 25);
+    rankText.setFillColor(rank == "Candy Champion" ? sf::Color(255, 215, 0) :
+        (rank == "Sweet Specialist" ? sf::Color(100, 220, 255) : sf::Color(150, 255, 150)));
+    rankText.setPosition({ 270.0f, 150.0f });
+    window.draw(rankText);
+
+    sf::Text personalBestText(font, "Personal Best: " + to_string(personalBest), 23);
+    personalBestText.setFillColor(sf::Color(255, 180, 100));
+    personalBestText.setPosition({ 275.0f, 190.0f });
+    window.draw(personalBestText);
+
+
+    sf::Text timeUpText(font, "Time's up!", 22);
+    timeUpText.setFillColor(sf::Color::White);
+    timeUpText.setPosition({ 350.0f, 485.0f });
+    window.draw(timeUpText);
+
+    sf::RectangleShape restartButton({ 240.0f, 65.0f });
+    restartButton.setPosition({ 280.0f, 555.0f });
+    restartButton.setFillColor(sf::Color(70, 170, 100));
+    restartButton.setOutlineThickness(3.0f);
+    restartButton.setOutlineColor(sf::Color::White);
+    window.draw(restartButton);
+
+    sf::Text restartText(font, "RESTART GAME", 27);
+    restartText.setFillColor(sf::Color::White);
+    restartText.setPosition({ 305.0f, 571.0f });
+    window.draw(restartText);
+}
+
+void drawNameEntry(sf::RenderWindow& window)
+{
+    static sf::Font font("C:/Windows/Fonts/arial.ttf");
+    window.clear(sf::Color(30, 30, 50));
+
+    sf::Text title(font, "CANDY CRUSH", 58);
+    title.setFillColor(sf::Color(255, 120, 160));
+    title.setPosition({ 205.0f, 145.0f });
+    window.draw(title);
+
+    sf::Text subtitle(font, "Enter your player name", 30);
+    subtitle.setFillColor(sf::Color::White);
+    subtitle.setPosition({ 245.0f, 285.0f });
+    window.draw(subtitle);
+
+    sf::RectangleShape nameBox({ 420.0f, 60.0f });
+    nameBox.setPosition({ 190.0f, 350.0f });
+    nameBox.setFillColor(sf::Color(65, 65, 95));
+    nameBox.setOutlineThickness(3.0f);
+    nameBox.setOutlineColor(sf::Color(255, 220, 120));
+    window.draw(nameBox);
+
+    string shownName = playerName.empty() ? "Type your name here..." : playerName;
+    sf::Text inputText(font, shownName, 26);
+    inputText.setFillColor(playerName.empty() ? sf::Color(180, 180, 180) : sf::Color::White);
+    inputText.setPosition({ 210.0f, 365.0f });
+    window.draw(inputText);
+
+    sf::Text instruction(font, "Press ENTER to start", 23);
+    instruction.setFillColor(sf::Color(180, 220, 255));
+    instruction.setPosition({ 290.0f, 455.0f });
+    window.draw(instruction);
+
+    sf::Text challenge(font, "Can you beat Maam Anousha's 1650 points?", 21);
+    challenge.setFillColor(sf::Color(255, 190, 100));
+    challenge.setPosition({ 190.0f, 535.0f });
+    window.draw(challenge);
+}
+
+void loadPersonalBest()
+{
+    ifstream inputFile("personal_best.txt");
+    if (inputFile.is_open())
+    {
+        inputFile >> personalBest;
+        if (!inputFile)
+            personalBest = 0;
+    }
+}
+
+void savePersonalBest()
+{
+    ofstream outputFile("personal_best.txt");
+    if (outputFile.is_open())
+        outputFile << personalBest;
+}
+
+void restartGame()
+{
+    score = 0;
+    timeRemaining = GAME_DURATION_SECONDS;
+    gameTimerClock.restart();
+    animationClock.restart();
+    selectedRow = -1;
+    selectedCol = -1;
+    gameOver = false;
+    scoreSubmitted = false;
+    isResolving = false;
+    isRemovingMatches = false;
+    initializeBoard();
+    checkMatches();
 }
 
 int main()
 {
-    // Generate random candies
+    srand(static_cast<unsigned int>(time(nullptr)));
+    loadPersonalBest();
+    loadLeaderboard();
     initializeBoard();
-
-    // Detect matches on the board
     checkMatches();
 
-    // Create the game window
-    sf::RenderWindow window(
-        sf::VideoMode({ 800, 800 }),
-        "Candy Crush"
-    );
+    sf::RenderWindow window(sf::VideoMode({ 1100, 800 }), "Candy Crush");
+    window.setFramerateLimit(60);
 
-    // Main game loop
     while (window.isOpen())
     {
-        // Check window events
         while (const std::optional event = window.pollEvent())
         {
             if (event->is<sf::Event::Closed>())
-            {
                 window.close();
+
+            if (nameEntryScreen)
+            {
+                if (const auto* textEvent = event->getIf<sf::Event::TextEntered>())
+                {
+                    char32_t entered = textEvent->unicode;
+                    if (entered >= 32 && entered <= 126 && playerName.size() < 16)
+                        playerName += static_cast<char>(entered);
+                }
+
+                if (const auto* keyEvent = event->getIf<sf::Event::KeyPressed>())
+                {
+                    if (keyEvent->code == sf::Keyboard::Key::Backspace && !playerName.empty())
+                        playerName.pop_back();
+                    else if (keyEvent->code == sf::Keyboard::Key::Enter && !playerName.empty())
+                    {
+                        // Keep the special leaderboard identity reserved for Maam Anousha.
+                        if (playerName == SPECIAL_PLAYER_NAME)
+                            playerName = "Player";
+                        nameEntryScreen = false;
+                        restartGame();
+                    }
+                }
+                continue;
             }
 
-            // Detect mouse clicks
-            if (event->is<sf::Event::MouseButtonPressed>())
+            if (gameOver)
             {
-                if (event->getIf<sf::Event::MouseButtonPressed>()->button
-                    == sf::Mouse::Button::Left)
+                if (const auto* mouseEvent = event->getIf<sf::Event::MouseButtonPressed>())
+                {
+                    if (mouseEvent->button == sf::Mouse::Button::Left)
+                    {
+                        sf::Vector2i mousePosition = sf::Mouse::getPosition(window);
+                        sf::FloatRect restartBounds({ 280.0f, 555.0f }, { 240.0f, 65.0f });
+                        if (restartBounds.contains({ static_cast<float>(mousePosition.x), static_cast<float>(mousePosition.y) }))
+                            restartGame();
+                    }
+                }
+            }
+            else if (const auto* mouseEvent = event->getIf<sf::Event::MouseButtonPressed>())
+            {
+                if (mouseEvent->button == sf::Mouse::Button::Left)
                 {
                     sf::Vector2i mousePosition = sf::Mouse::getPosition(window);
-
                     selectCandy(mousePosition.x, mousePosition.y);
                 }
             }
         }
 
-        // Clear the window
+        if (nameEntryScreen)
+        {
+            drawNameEntry(window);
+            window.display();
+            continue;
+        }
+
+        if (!gameOver)
+        {
+            updateGameTimer();
+            if (timeRemaining <= 0.0f)
+            {
+                timeRemaining = 0.0f;
+                gameOver = true;
+
+                if (score > personalBest)
+                {
+                    personalBest = score;
+                    savePersonalBest();
+                }
+                submitScoreToLeaderboard();
+            }
+        }
+
+        if (!gameOver)
+        {
+            updateAnimations();
+            if (isResolving && allAnimationsFinished())
+            {
+                if (isRemovingMatches)
+                {
+                    removeMatchedCandies();
+                    for (int row = 0; row < ROWS; row++)
+                        for (int col = 0; col < COLS; col++)
+                            matched[row][col] = false;
+                    isRemovingMatches = false;
+                    applyGravity();
+                    refillBoard();
+                }
+                else
+                {
+                    checkMatches();
+                    if (hasMatches())
+                        resolveMatches();
+                    else
+                        isResolving = false;
+                }
+            }
+        }
+
         window.clear(sf::Color(30, 30, 50));
-
-        // Draw the candy board
         drawBoard(window);
-
-        // Display everything
+        if (gameOver)
+            drawGameOver(window);
+        else
+            drawLeaderboard(window, 90.0f);
         window.display();
     }
 
