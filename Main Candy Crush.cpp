@@ -76,10 +76,11 @@ bool hasMatches();
 void updateGameTimer();
 void drawGameOver(sf::RenderWindow& window);
 string getPerformanceRank();
+void restartGame();
 
 void initializeBoard()
 {
-    srand(time(0));
+    // The random-number generator is seeded once in main(), not on every restart.
     for (int row = 0; row < ROWS; row++)
     {
         for (int col = 0; col < COLS; col++)
@@ -117,6 +118,7 @@ void initializeBoard()
             candyAnimations[row][col].startScale = 1.0f;
             candyAnimations[row][col].targetScale = 1.0f;
             candyAnimations[row][col].isAnimating = false;
+            matched[row][col] = false;
         }
     }
 }
@@ -207,6 +209,7 @@ float lerp(float start, float end, float t)
 {
     return start + (end - start) * t;
 }
+
 // Update all candy animations
 void updateAnimations()
 {
@@ -666,6 +669,19 @@ void drawGameOver(sf::RenderWindow& window)
     timeUpText.setFillColor(sf::Color::White);
     timeUpText.setPosition({ 335.0f, 535.0f });
     window.draw(timeUpText);
+
+    // Draw the restart button on top of the Game Over overlay.
+    sf::RectangleShape restartButton({ 240.0f, 65.0f });
+    restartButton.setPosition({ 280.0f, 600.0f });
+    restartButton.setFillColor(sf::Color(70, 170, 100));
+    restartButton.setOutlineThickness(3.0f);
+    restartButton.setOutlineColor(sf::Color::White);
+    window.draw(restartButton);
+
+    sf::Text restartText(font, "RESTART GAME", 27);
+    restartText.setFillColor(sf::Color::White);
+    restartText.setPosition({ 305.0f, 616.0f });
+    window.draw(restartText);
 }
 
 // Load the saved personal-best score when the game starts.
@@ -695,8 +711,37 @@ void savePersonalBest()
     }
 }
 
+// Start a new round without changing the saved personal-best score.
+void restartGame()
+{
+    score = 0;
+
+    // Reset the countdown and its clock.
+    timeRemaining = GAME_DURATION_SECONDS;
+    gameTimerClock.restart();
+
+    // Clear the current selection.
+    selectedRow = -1;
+    selectedCol = -1;
+
+    // Reset all game-state flags.
+    gameOver = false;
+    isResolving = false;
+    isRemovingMatches = false;
+
+    // Generate a completely fresh board and reset its animations.
+    initializeBoard();
+    checkMatches();
+
+    // Prevent time spent on the Game Over screen from affecting animations.
+    animationClock.restart();
+}
+
 int main()
 {
+    // Seed the random-number generator once so each restart gets a new board.
+    srand(static_cast<unsigned int>(time(nullptr)));
+
     loadPersonalBest();
     initializeBoard();
     checkMatches();
@@ -736,6 +781,33 @@ int main()
             {
                 window.close();
             }
+
+            // Handle clicks on the Restart Game button after the game ends.
+            if (gameOver &&
+                event->is<sf::Event::MouseButtonPressed>())
+            {
+                if (event->getIf<sf::Event::MouseButtonPressed>()->button
+                    == sf::Mouse::Button::Left)
+                {
+                    sf::Vector2i mousePosition =
+                        sf::Mouse::getPosition(window);
+
+                    sf::FloatRect restartButtonBounds(
+                        { 280.0f, 600.0f },
+                        { 240.0f, 65.0f }
+                    );
+
+                    if (restartButtonBounds.contains({
+                        static_cast<float>(mousePosition.x),
+                        static_cast<float>(mousePosition.y)
+                        }))
+                    {
+                        restartGame();
+                    }
+                }
+            }
+
+            // Normal candy selection is only available during active gameplay.
             if (!gameOver &&
                 event->is<sf::Event::MouseButtonPressed>())
             {
@@ -749,6 +821,7 @@ int main()
                 }
             }
         }
+
         // Stop animation and cascade updates after the game ends.
         if (!gameOver)
         {
