@@ -2,6 +2,7 @@
 #include <iostream>
 #include <cstdlib>
 #include <ctime>
+#include <cmath>
 
 using namespace std;
 
@@ -46,6 +47,14 @@ int selectedCol = -1;
 
 int score = 0;
 
+// Game timer (Member 2 - Step 11)
+const float GAME_DURATION_SECONDS = 60.0f;
+float timeRemaining = GAME_DURATION_SECONDS;
+sf::Clock gameTimerClock;
+
+// Whether the game has ended.
+bool gameOver = false;
+
 // Whether the board is currently resolving matches
 bool isResolving = false;
 
@@ -62,6 +71,9 @@ bool allAnimationsFinished();
 void resolveMatches();
 void calculateScore();
 bool hasMatches();
+void updateGameTimer();
+void drawGameOver(sf::RenderWindow& window);
+string getPerformanceRank();
 
 void initializeBoard()
 {
@@ -114,6 +126,13 @@ void drawBoard(sf::RenderWindow& window)
     scoreText.setPosition({ 20.0f, 10.0f });
     scoreText.setFillColor(sf::Color::White);
     window.draw(scoreText);
+
+    // Display the remaining game time.
+    sf::Text timerText(font, "Time: " +
+        to_string(static_cast<int>(ceil(timeRemaining))), 30);
+    timerText.setPosition({ 650.0f, 10.0f });
+    timerText.setFillColor(sf::Color::White);
+    window.draw(timerText);
     float cellSize = 75.0f;
     float startX = 62.5f;
     float startY = 62.5f;
@@ -259,7 +278,7 @@ void swapCandies(int row1, int col1, int row2, int col2)
 void selectCandy(int mouseX, int mouseY)
 {
     // Prevent player input during animations
-    if (isResolving)
+    if (isResolving || timeRemaining <= 0.0f)
     {
         return;
     }
@@ -548,6 +567,96 @@ void resolveMatches()
     isResolving = true;
 }
 
+// Update the countdown independently of candy animation timing.
+void updateGameTimer()
+{
+    if (timeRemaining > 0.0f)
+    {
+        float deltaTime = gameTimerClock.restart().asSeconds();
+        timeRemaining -= deltaTime;
+
+        if (timeRemaining < 0.0f)
+        {
+            timeRemaining = 0.0f;
+        }
+    }
+    else
+    {
+        // Keep the clock from accumulating time after the countdown ends.
+        gameTimerClock.restart();
+    }
+}
+
+// Display the final screen when the countdown reaches zero.
+// Assign a performance title based on the player's final score.
+string getPerformanceRank()
+{
+    // Each matched candy is worth 10 points.
+    // These thresholds can be adjusted as gameplay is balanced.
+    if (score >= 1000)
+    {
+        return "Candy Champion";
+    }
+    else if (score >= 500)
+    {
+        return "Sweet Specialist";
+    }
+    else
+    {
+        return "Candy Rookie";
+    }
+}
+
+void drawGameOver(sf::RenderWindow& window)
+{
+    static sf::Font font("C:/Windows/Fonts/arial.ttf");
+
+    // Darken the game board behind the Game Over message.
+    sf::RectangleShape overlay({ 800.0f, 800.0f });
+    overlay.setPosition({ 0.0f, 0.0f });
+    overlay.setFillColor(sf::Color(0, 0, 0, 190));
+    window.draw(overlay);
+
+    sf::Text gameOverText(font, "GAME OVER", 64);
+    gameOverText.setFillColor(sf::Color::White);
+    gameOverText.setPosition({ 225.0f, 285.0f });
+    window.draw(gameOverText);
+
+    sf::Text finalScoreText(
+        font,
+        "Final Score: " + to_string(score),
+        36
+    );
+    finalScoreText.setFillColor(sf::Color(255, 220, 100));
+    finalScoreText.setPosition({ 270.0f, 365.0f });
+    window.draw(finalScoreText);
+
+    // Display the player's performance title.
+    string rank = getPerformanceRank();
+    sf::Text rankText(font, "Rank: " + rank, 34);
+
+    if (rank == "Candy Champion")
+    {
+        rankText.setFillColor(sf::Color(255, 215, 0));
+    }
+    else if (rank == "Sweet Specialist")
+    {
+        rankText.setFillColor(sf::Color(100, 220, 255));
+    }
+    else
+    {
+        rankText.setFillColor(sf::Color(150, 255, 150));
+    }
+
+    rankText.setPosition({ 245.0f, 425.0f });
+    window.draw(rankText);
+
+    sf::Text timeUpText(font, "Time's up!", 28);
+    timeUpText.setFillColor(sf::Color::White);
+    timeUpText.setPosition({ 335.0f, 490.0f });
+    window.draw(timeUpText);
+}
+
 int main()
 {
     initializeBoard();
@@ -557,15 +666,32 @@ int main()
         "Candy Crush"
     );
 
+    // Start the 60-second game countdown.
+    gameTimerClock.restart();
+
     while (window.isOpen())
     {
+        // Update the countdown before processing input so moves are blocked
+        // as soon as the timer reaches zero.
+        if (!gameOver)
+        {
+            updateGameTimer();
+
+            if (timeRemaining <= 0.0f)
+            {
+                timeRemaining = 0.0f;
+                gameOver = true;
+            }
+        }
+
         while (const std::optional event = window.pollEvent())
         {
             if (event->is<sf::Event::Closed>())
             {
                 window.close();
             }
-            if (event->is<sf::Event::MouseButtonPressed>())
+            if (!gameOver &&
+                event->is<sf::Event::MouseButtonPressed>())
             {
                 if (event->getIf<sf::Event::MouseButtonPressed>()->button
                     == sf::Mouse::Button::Left)
@@ -619,8 +745,65 @@ int main()
             }
         }
 
+        // Stop animation and cascade updates after the game ends.
+        if (!gameOver)
+        {
+            updateAnimations();
+
+            // Check whether the board is resolving a cascade.
+            if (isResolving && allAnimationsFinished())
+            {
+                // Check whether matched candies have finished shrinking.
+                if (isRemovingMatches)
+                {
+                    // Remove candies after their disappearance animation.
+                    removeMatchedCandies();
+
+                    // Clear previous match information.
+                    for (int row = 0; row < ROWS; row++)
+                    {
+                        for (int col = 0; col < COLS; col++)
+                        {
+                            matched[row][col] = false;
+                        }
+                    }
+
+                    // Finish the shrinking phase.
+                    isRemovingMatches = false;
+
+                    // Apply gravity.
+                    applyGravity();
+
+                    // Generate new candies.
+                    refillBoard();
+                }
+                else
+                {
+                    // Check for new matches after falling animations.
+                    checkMatches();
+
+                    if (hasMatches())
+                    {
+                        // Start another cascade.
+                        resolveMatches();
+                    }
+                    else
+                    {
+                        // No more matches: finish resolving.
+                        isResolving = false;
+                    }
+                }
+            }
+        }
+
         window.clear(sf::Color(30, 30, 50));
         drawBoard(window);
+
+        if (gameOver)
+        {
+            drawGameOver(window);
+        }
+
         window.display();
     }
 
