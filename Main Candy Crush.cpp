@@ -703,6 +703,47 @@ int main()
                 }
             }
         }
+        // Update all active animations
+        updateAnimations();
+        // Check whether the board is resolving a cascade
+        if (isResolving && allAnimationsFinished())
+        {
+            // Check whether matched candies have finished shrinking
+            if (isRemovingMatches)
+            {
+                // Remove candies after their disappearance animation
+                removeMatchedCandies();
+                // Clear previous match information
+                for (int row = 0; row < ROWS; row++)
+                {
+                    for (int col = 0; col < COLS; col++)
+                    {
+                        matched[row][col] = false;
+                    }
+                }
+                // Finish the shrinking phase
+                isRemovingMatches = false;
+                // Apply gravity
+                applyGravity();
+                // Generate new candies
+                refillBoard();
+            }
+            else
+            {
+                // Check for new matches after falling animations
+                checkMatches();
+                if (hasMatches())
+                {
+                    // Start another cascade
+                    resolveMatches();
+                }
+                else
+                {
+                    // No more matches: finish resolving
+                    isResolving = false;
+                }
+            }
+        }
 
         // Stop animation and cascade updates after the game ends.
         if (!gameOver)
