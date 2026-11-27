@@ -7,6 +7,7 @@
 #include <sstream>
 #include <string>
 #include <cctype>
+#include <optional>
 
 using namespace std;
 
@@ -67,6 +68,8 @@ bool isResolving = false;
 bool isRemovingMatches = false;
 
 // Function declarations
+void initializeBoard();
+void saveLeaderboard();
 void checkMatches();
 void removeMatchedCandies();
 void applyGravity();
@@ -78,16 +81,6 @@ void calculateScore();
 bool hasMatches();
 void updateGameTimer();
 void drawGameOver(sf::RenderWindow& window);
-string getPerformanceRank();
-void restartGame();
-void loadPersonalBest();
-void savePersonalBest();
-void loadLeaderboard();
-void saveLeaderboard();
-void submitScoreToLeaderboard();
-void sortLeaderboard();
-void drawLeaderboard(sf::RenderWindow& window, float startY);
-void drawNameEntry(sf::RenderWindow& window);
 
 // Initialize a board without starting with automatic matches.
 void initializeBoard()
@@ -560,14 +553,35 @@ void submitScoreToLeaderboard()
     scoreSubmitted = true;
 }
 
+
+// Draw text horizontally centered around a given x-coordinate.
+void drawCenteredText(sf::RenderWindow& window, sf::Text& text, float centerX, float y)
+{
+    sf::FloatRect bounds = text.getLocalBounds();
+    text.setPosition({ centerX - (bounds.position.x + bounds.size.x / 2.0f), y });
+    window.draw(text);
+}
+
 void drawLeaderboard(sf::RenderWindow& window, float startY)
 {
     static sf::Font font("C:/Windows/Fonts/arial.ttf");
 
+    // Panel positioned to the right of the game board.
+    sf::RectangleShape panel({ 320.0f, 340.0f });
+    panel.setPosition({ 760.0f, startY - 25.0f });
+    panel.setFillColor(sf::Color(45, 45, 70));
+    panel.setOutlineThickness(2.0f);
+    panel.setOutlineColor(sf::Color(255, 215, 0));
+    window.draw(panel);
+
     sf::Text heading(font, "LEADERBOARD", 26);
     heading.setFillColor(sf::Color(255, 215, 0));
-    heading.setPosition({ 770.0f, startY });
-    window.draw(heading);
+    drawCenteredText(window, heading, 920.0f, startY + 5.0f);
+
+    sf::RectangleShape divider({ 270.0f, 2.0f });
+    divider.setPosition({ 785.0f, startY + 48.0f });
+    divider.setFillColor(sf::Color(120, 120, 150));
+    window.draw(divider);
 
     for (int i = 0; i < DISPLAYED_LEADERBOARD_ENTRIES; i++)
     {
@@ -587,47 +601,54 @@ void drawLeaderboard(sf::RenderWindow& window, float startY)
 
         sf::Text entryText(font, line, 18);
         entryText.setFillColor(color);
-        entryText.setPosition({ 770.0f, startY + 48.0f + i * 42.0f });
+        entryText.setPosition({ 785.0f, startY + 68.0f + i * 42.0f });
         window.draw(entryText);
     }
+
+    sf::Text challenge(font, "Beat 1650 to take the crown!", 15);
+    challenge.setFillColor(sf::Color(255, 190, 100));
+    drawCenteredText(window, challenge, 920.0f, startY + 295.0f);
 }
 
 void drawGameOver(sf::RenderWindow& window)
 {
     static sf::Font font("C:/Windows/Fonts/arial.ttf");
+
     sf::RectangleShape overlay({ 1100.0f, 800.0f });
     overlay.setFillColor(sf::Color(0, 0, 0, 215));
     window.draw(overlay);
 
-    sf::Text title(font, "GAME OVER", 52);
-    title.setFillColor(sf::Color::White);
-    title.setPosition({ 275.0f, 35.0f });
-    window.draw(title);
+    sf::RectangleShape panel({ 500.0f, 570.0f });
+    panel.setPosition({ 300.0f, 100.0f });
+    panel.setFillColor(sf::Color(45, 45, 70));
+    panel.setOutlineThickness(3.0f);
+    panel.setOutlineColor(sf::Color(255, 215, 0));
+    window.draw(panel);
 
-    sf::Text playerText(font, playerName + "'s Score: " + to_string(score), 28);
+    sf::Text title(font, "GAME OVER", 48);
+    title.setFillColor(sf::Color::White);
+    drawCenteredText(window, title, 550.0f, 145.0f);
+
+    sf::Text playerText(font, playerName + "'s Score: " + to_string(score), 27);
     playerText.setFillColor(sf::Color(255, 220, 100));
-    playerText.setPosition({ 245.0f, 105.0f });
-    window.draw(playerText);
+    drawCenteredText(window, playerText, 550.0f, 235.0f);
 
     string rank = getPerformanceRank();
     sf::Text rankText(font, "Rank: " + rank, 25);
     rankText.setFillColor(rank == "Candy Champion" ? sf::Color(255, 215, 0) :
         (rank == "Sweet Specialist" ? sf::Color(100, 220, 255) : sf::Color(150, 255, 150)));
-    rankText.setPosition({ 270.0f, 150.0f });
-    window.draw(rankText);
+    drawCenteredText(window, rankText, 550.0f, 295.0f);
 
     sf::Text personalBestText(font, "Personal Best: " + to_string(personalBest), 23);
     personalBestText.setFillColor(sf::Color(255, 180, 100));
-    personalBestText.setPosition({ 275.0f, 190.0f });
-    window.draw(personalBestText);
+    drawCenteredText(window, personalBestText, 550.0f, 350.0f);
 
     sf::Text timeUpText(font, "Time's up!", 22);
     timeUpText.setFillColor(sf::Color::White);
-    timeUpText.setPosition({ 350.0f, 485.0f });
-    window.draw(timeUpText);
+    drawCenteredText(window, timeUpText, 550.0f, 445.0f);
 
-    sf::RectangleShape restartButton({ 240.0f, 65.0f });
-    restartButton.setPosition({ 280.0f, 555.0f });
+    sf::RectangleShape restartButton({ 260.0f, 70.0f });
+    restartButton.setPosition({ 420.0f, 535.0f });
     restartButton.setFillColor(sf::Color(70, 170, 100));
     restartButton.setOutlineThickness(3.0f);
     restartButton.setOutlineColor(sf::Color::White);
@@ -635,8 +656,7 @@ void drawGameOver(sf::RenderWindow& window)
 
     sf::Text restartText(font, "RESTART GAME", 27);
     restartText.setFillColor(sf::Color::White);
-    restartText.setPosition({ 305.0f, 571.0f });
-    window.draw(restartText);
+    drawCenteredText(window, restartText, 550.0f, 552.0f);
 }
 
 void drawNameEntry(sf::RenderWindow& window)
@@ -646,16 +666,14 @@ void drawNameEntry(sf::RenderWindow& window)
 
     sf::Text title(font, "CANDY CRUSH", 58);
     title.setFillColor(sf::Color(255, 120, 160));
-    title.setPosition({ 205.0f, 145.0f });
-    window.draw(title);
+    drawCenteredText(window, title, 550.0f, 145.0f);
 
     sf::Text subtitle(font, "Enter your player name", 30);
     subtitle.setFillColor(sf::Color::White);
-    subtitle.setPosition({ 245.0f, 285.0f });
-    window.draw(subtitle);
+    drawCenteredText(window, subtitle, 550.0f, 285.0f);
 
     sf::RectangleShape nameBox({ 420.0f, 60.0f });
-    nameBox.setPosition({ 190.0f, 350.0f });
+    nameBox.setPosition({ 340.0f, 350.0f });
     nameBox.setFillColor(sf::Color(65, 65, 95));
     nameBox.setOutlineThickness(3.0f);
     nameBox.setOutlineColor(sf::Color(255, 220, 120));
@@ -664,18 +682,15 @@ void drawNameEntry(sf::RenderWindow& window)
     string shownName = playerName.empty() ? "Type your name here..." : playerName;
     sf::Text inputText(font, shownName, 26);
     inputText.setFillColor(playerName.empty() ? sf::Color(180, 180, 180) : sf::Color::White);
-    inputText.setPosition({ 210.0f, 365.0f });
-    window.draw(inputText);
+    drawCenteredText(window, inputText, 550.0f, 365.0f);
 
     sf::Text instruction(font, "Press ENTER to start", 23);
     instruction.setFillColor(sf::Color(180, 220, 255));
-    instruction.setPosition({ 290.0f, 455.0f });
-    window.draw(instruction);
+    drawCenteredText(window, instruction, 550.0f, 455.0f);
 
     sf::Text challenge(font, "Can you beat Maam Anousha's 1650 points?", 21);
     challenge.setFillColor(sf::Color(255, 190, 100));
-    challenge.setPosition({ 190.0f, 535.0f });
-    window.draw(challenge);
+    drawCenteredText(window, challenge, 550.0f, 535.0f);
 }
 
 void loadPersonalBest()
@@ -762,7 +777,7 @@ int main()
                     if (mouseEvent->button == sf::Mouse::Button::Left)
                     {
                         sf::Vector2i mousePosition = sf::Mouse::getPosition(window);
-                        sf::FloatRect restartBounds({ 280.0f, 555.0f }, { 240.0f, 65.0f });
+                        sf::FloatRect restartBounds({ 420.0f, 535.0f }, { 260.0f, 70.0f });
                         if (restartBounds.contains({ static_cast<float>(mousePosition.x), static_cast<float>(mousePosition.y) }))
                             restartGame();
                     }
