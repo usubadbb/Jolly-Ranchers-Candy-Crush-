@@ -1,4 +1,3 @@
-
 #include <SFML/Graphics.hpp>
 #include <iostream>
 #include <cstdlib>
@@ -535,6 +534,8 @@ void calculateScore()
             }
         }
     }
+    isRemovingMatches = true;
+    isResolving = true;
 }
 
 void resolveMatches()
