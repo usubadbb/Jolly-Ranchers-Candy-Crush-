@@ -166,7 +166,7 @@ const int MAX_LEADERBOARD_ENTRIES = 100;
 const int DISPLAYED_LEADERBOARD_ENTRIES = 5;
 const string LEADERBOARD_FILE = "leaderboard.txt";
 const string SPECIAL_PLAYER_NAME = "Maam Anousha";
-const int SPECIAL_PLAYER_SCORE = 1650;
+const int SPECIAL_PLAYER_SCORE = 2000;
 LeaderboardEntry leaderboard[MAX_LEADERBOARD_ENTRIES];
 int leaderboardCount = 0;
 
@@ -831,13 +831,16 @@ void sortLeaderboard()
     }
 }
 
-// Add Maam Anousha if she is not already present.
+// Keep Maam Anousha's leaderboard score fixed at 2000.
 void ensureSpecialPlayerExists()
 {
     for (int i = 0; i < leaderboardCount; i++)
     {
         if (leaderboard[i].playerName == SPECIAL_PLAYER_NAME)
+        {
+            leaderboard[i].playerScore = SPECIAL_PLAYER_SCORE;
             return;
+        }
     }
 
     if (leaderboardCount < MAX_LEADERBOARD_ENTRIES)
@@ -1012,7 +1015,7 @@ void drawLeaderboard(sf::RenderWindow& window, float startY)
         window.draw(entryText);
     }
 
-    sf::Text challenge(font, "Beat 1650 to take the crown!", 15);
+    sf::Text challenge(font, "PRODUCED BY KODE KRAFTERS", 15);
     challenge.setFillColor(sf::Color(255, 190, 100));
     drawCenteredText(window, challenge, 920.0f, startY + 295.0f);
 }
@@ -1083,29 +1086,22 @@ void drawNameEntry(sf::RenderWindow& window)
     panel.setOutlineColor(sf::Color(160, 205, 255, 105));
     window.draw(panel);
 
-    // Colorful candy-like accents around the title.
-    const sf::Color candyColors[5] = {
-        sf::Color(255, 95, 125),
-        sf::Color(255, 185, 75),
-        sf::Color(155, 105, 235),
-        sf::Color(75, 175, 255),
-        sf::Color(100, 220, 145)
-    };
-
+    // Five actual Jolly Rancher candy textures across the welcome panel.
     for (int i = 0; i < 5; ++i)
     {
-        const float x = 285.0f + i * 132.0f;
-        sf::CircleShape candy(17.0f);
-        candy.setPosition({ x, 145.0f });
-        candy.setFillColor(candyColors[i]);
-        candy.setOutlineThickness(2.0f);
-        candy.setOutlineColor(sf::Color(255, 255, 255, 150));
-        window.draw(candy);
+        if (candyTexturesLoaded)
+        {
+            sf::Sprite candy(candyTextures[i]);
+            const sf::Vector2u textureSize = candyTextures[i].getSize();
+            const float widthScale = 58.0f / static_cast<float>(textureSize.x);
+            const float heightScale = 58.0f / static_cast<float>(textureSize.y);
+            const float scale = widthScale < heightScale ? widthScale : heightScale;
 
-        sf::CircleShape shine(5.0f);
-        shine.setPosition({ x + 5.0f, 149.0f });
-        shine.setFillColor(sf::Color(255, 255, 255, 165));
-        window.draw(shine);
+            candy.setOrigin({ textureSize.x / 2.0f, textureSize.y / 2.0f });
+            candy.setScale({ scale, scale });
+            candy.setPosition({ 302.0f + i * 134.0f, 165.0f });
+            window.draw(candy);
+        }
     }
 
     sf::Text titleTop(font, "CANDY CRUSH:", 43);
@@ -1152,7 +1148,7 @@ void drawNameEntry(sf::RenderWindow& window)
     instruction.setFillColor(sf::Color(150, 255, 205));
     drawCenteredText(window, instruction, 550.0f, 560.0f);
 
-    sf::Text challenge(font, "Can you beat Maam Anousha's 1650 points?", 18);
+    sf::Text challenge(font, "Can you beat Maam Anousha's 2000 points?", 18);
     challenge.setFillColor(sf::Color(255, 190, 125));
     drawCenteredText(window, challenge, 550.0f, 635.0f);
 }
