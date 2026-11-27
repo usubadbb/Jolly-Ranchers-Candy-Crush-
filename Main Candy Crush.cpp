@@ -1,4 +1,3 @@
-
 #include <SFML/Graphics.hpp>
 #include <iostream>
 #include <cstdlib>
@@ -11,16 +10,17 @@ struct CandyAnimation
     // Current visual position
     float x;
     float y;
-
     // Destination visual position
     float targetX;
     float targetY;
     float startX;
     float startY;
-
+    // Candy size animation
+    float scale;
+    float startScale;
+    float targetScale;
     // Animation progress
     float progress;
-
     // Whether the candy is animating
     bool isAnimating;
 };
@@ -28,7 +28,7 @@ struct CandyAnimation
 // Tracks time for candy animations
 sf::Clock animationClock;
 
-// Duration of a candy falling animation
+// Duration of candy animations
 const float ANIMATION_DURATION = 0.3f;
 
 const int ROWS = 9;
@@ -46,27 +46,26 @@ int selectedCol = -1;
 
 int score = 0;
 
+// Whether the board is currently resolving matches
+bool isResolving = false;
+
+// Whether matched candies are currently shrinking
+bool isRemovingMatches = false;
+
+// Function declarations
 void checkMatches();
-
 void removeMatchedCandies();
-
 void applyGravity();
-
 void refillBoard();
-
 void updateAnimations();
-
+bool allAnimationsFinished();
 void resolveMatches();
-
 void calculateScore();
-
 bool hasMatches();
 
 void initializeBoard()
 {
-    
     srand(time(0));
-
     for (int row = 0; row < ROWS; row++)
     {
         for (int col = 0; col < COLS; col++)
@@ -86,19 +85,24 @@ void initializeBoard()
                     board[row - 2][col] == candy)
                 );
             board[row][col] = candy;
-            
-            candyAnimations[row][col].x = 62.5f + col * 75.0f + 7.5f;
-            candyAnimations[row][col].y = 62.5f + row * 75.0f + 7.5f;
-            
-            candyAnimations[row][col].startX = candyAnimations[row][col].x;
-            candyAnimations[row][col].startY = candyAnimations[row][col].y;
-
-            candyAnimations[row][col].targetX = candyAnimations[row][col].x;
-            candyAnimations[row][col].targetY = candyAnimations[row][col].y;
+            candyAnimations[row][col].x =
+                62.5f + col * 75.0f + 7.5f;
+            candyAnimations[row][col].y =
+                62.5f + row * 75.0f + 7.5f;
+            candyAnimations[row][col].startX =
+                candyAnimations[row][col].x;
+            candyAnimations[row][col].startY =
+                candyAnimations[row][col].y;
+            candyAnimations[row][col].targetX =
+                candyAnimations[row][col].x;
+            candyAnimations[row][col].targetY =
+                candyAnimations[row][col].y;
             candyAnimations[row][col].progress = 1.0f;
-
+            // Initialize candy size
+            candyAnimations[row][col].scale = 1.0f;
+            candyAnimations[row][col].startScale = 1.0f;
+            candyAnimations[row][col].targetScale = 1.0f;
             candyAnimations[row][col].isAnimating = false;
-
         }
     }
 }
@@ -113,7 +117,6 @@ void drawBoard(sf::RenderWindow& window)
     float cellSize = 75.0f;
     float startX = 62.5f;
     float startY = 62.5f;
-
     for (int row = 0; row < ROWS; row++)
     {
         for (int col = 0; col < COLS; col++)
@@ -123,7 +126,6 @@ void drawBoard(sf::RenderWindow& window)
                 startX + col * cellSize,
                 startY + row * cellSize
                 });
-
             cell.setFillColor(sf::Color(65, 65, 95));
             window.draw(cell);
             if (board[row][col] == -1)
@@ -131,10 +133,19 @@ void drawBoard(sf::RenderWindow& window)
                 continue;
             }
             sf::CircleShape candy(30.0f);
-            candy.setPosition({
-                candyAnimations[row][col].x,
-                candyAnimations[row][col].y
+            // Set the origin to the center of the candy
+            candy.setOrigin({ 30.0f, 30.0f });
+            // Apply the current animation scale
+            candy.setScale({
+                candyAnimations[row][col].scale,
+                candyAnimations[row][col].scale
                 });
+            // Position the candy using its center
+            candy.setPosition({
+                candyAnimations[row][col].x + 30.0f,
+                candyAnimations[row][col].y + 30.0f
+                });
+            // Candy colors
             if (board[row][col] == 0)
             {
                 candy.setFillColor(sf::Color(252, 108, 133));
@@ -155,7 +166,6 @@ void drawBoard(sf::RenderWindow& window)
             {
                 candy.setFillColor(sf::Color::Green);
             }
-
             if (matched[row][col])
             {
                 candy.setOutlineThickness(4.0f);
@@ -166,62 +176,77 @@ void drawBoard(sf::RenderWindow& window)
                 candy.setOutlineThickness(4.0f);
                 candy.setOutlineColor(sf::Color::Yellow);
             }
-
             window.draw(candy);
         }
     }
 }
 
-
-// Calculate a position between two values, where t is the progress until the end position.
+// Calculate a position between two values
 float lerp(float start, float end, float t)
 {
     return start + (end - start) * t;
 }
-
 // Update all candy animations
 void updateAnimations()
 {
     // Calculate time elapsed since the previous frame
     float deltaTime = animationClock.restart().asSeconds();
-
-    // Go through every row
     for (int row = 0; row < ROWS; row++)
     {
-        // Go through every column
         for (int col = 0; col < COLS; col++)
         {
-            // Check whether this candy is animating
             if (candyAnimations[row][col].isAnimating)
             {
                 // Increase animation progress
-                candyAnimations[row][col].progress += deltaTime / ANIMATION_DURATION;
-
-                // Update the candy's horizontal position
+                candyAnimations[row][col].progress +=
+                    deltaTime / ANIMATION_DURATION;
+                // Prevent progress from exceeding 1
+                if (candyAnimations[row][col].progress > 1.0f)
+                {
+                    candyAnimations[row][col].progress = 1.0f;
+                }
+                // Update horizontal position
                 candyAnimations[row][col].x = lerp(
                     candyAnimations[row][col].startX,
                     candyAnimations[row][col].targetX,
                     candyAnimations[row][col].progress
                 );
-
-                // Update the candy's vertical position
+                // Update vertical position
                 candyAnimations[row][col].y = lerp(
                     candyAnimations[row][col].startY,
                     candyAnimations[row][col].targetY,
                     candyAnimations[row][col].progress
                 );
-
-                // Prevent progress from exceeding 1
+                // Update candy size
+                candyAnimations[row][col].scale = lerp(
+                    candyAnimations[row][col].startScale,
+                    candyAnimations[row][col].targetScale,
+                    candyAnimations[row][col].progress
+                );
+                // Check whether animation has finished
                 if (candyAnimations[row][col].progress >= 1.0f)
                 {
-                    candyAnimations[row][col].progress = 1.0f;
-
-                    // Animation has finished
                     candyAnimations[row][col].isAnimating = false;
                 }
             }
         }
     }
+}
+
+// Check whether every candy has finished animating
+bool allAnimationsFinished()
+{
+    for (int row = 0; row < ROWS; row++)
+    {
+        for (int col = 0; col < COLS; col++)
+        {
+            if (candyAnimations[row][col].isAnimating)
+            {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 void swapCandies(int row1, int col1, int row2, int col2)
@@ -233,11 +258,17 @@ void swapCandies(int row1, int col1, int row2, int col2)
 
 void selectCandy(int mouseX, int mouseY)
 {
+    // Prevent player input during animations
+    if (isResolving)
+    {
+        return;
+    }
     float cellSize = 75.0f;
     float startX = 62.5f;
     float startY = 62.5f;
     int col = (mouseX - startX) / cellSize;
     int row = (mouseY - startY) / cellSize;
+
     if (row >= 0 && row < ROWS &&
         col >= 0 && col < COLS)
     {
@@ -255,7 +286,9 @@ void selectCandy(int mouseX, int mouseY)
                     (row == selectedRow - 1 || row == selectedRow + 1)))
             {
                 swapCandies(selectedRow, selectedCol, row, col);
+
                 checkMatches();
+
                 if (hasMatches())
                 {
                     resolveMatches();
@@ -264,6 +297,7 @@ void selectCandy(int mouseX, int mouseY)
                 {
                     swapCandies(selectedRow, selectedCol, row, col);
                 }
+
                 selectedRow = -1;
                 selectedCol = -1;
             }
@@ -341,7 +375,6 @@ bool hasMatches()
             }
         }
     }
-
     return false;
 }
 
@@ -369,7 +402,6 @@ void applyGravity()
         // Search upwards through the column
         for (int row = ROWS - 1; row >= 0; row--)
         {
-            // Check whether the position contains a candy
             if (board[row][col] != -1)
             {
                 // Move the candy down to the available position
@@ -394,6 +426,12 @@ void applyGravity()
                 candyAnimations[writeRow][col].targetY =
                     62.5f + writeRow * 75.0f + 7.5f;
 
+                // Prepare size to remain normal
+                candyAnimations[writeRow][col].startScale =
+                    candyAnimations[writeRow][col].scale;
+
+                candyAnimations[writeRow][col].targetScale = 1.0f;
+
                 // Reset animation progress
                 candyAnimations[writeRow][col].progress = 0.0f;
 
@@ -402,12 +440,11 @@ void applyGravity()
                     (candyAnimations[writeRow][col].startY !=
                         candyAnimations[writeRow][col].targetY);
 
-                // Move the available position upwards
                 writeRow--;
             }
         }
 
-        // Fill all remaining positions at the top with -1
+        // Fill remaining positions at the top with -1
         while (writeRow >= 0)
         {
             board[writeRow][col] = -1;
@@ -424,7 +461,34 @@ void refillBoard()
         {
             if (board[row][col] == -1)
             {
+                // Generate a new random candy
                 board[row][col] = rand() % 5;
+                // Reset new candy to its normal size
+                candyAnimations[row][col].scale = 1.0f;
+                candyAnimations[row][col].startScale = 1.0f;
+                candyAnimations[row][col].targetScale = 1.0f;
+                // Set its horizontal destination
+                candyAnimations[row][col].targetX =
+                    62.5f + col * 75.0f + 7.5f;
+                // Set its vertical destination
+                candyAnimations[row][col].targetY =
+                    62.5f + row * 75.0f + 7.5f;
+                // Set its starting horizontal position
+                candyAnimations[row][col].startX =
+                    candyAnimations[row][col].targetX;
+                // Spawn the candy above the game board
+                candyAnimations[row][col].startY =
+                    candyAnimations[row][col].targetY
+                    - (row + 1) * 75.0f - 60.0f;
+                // Set the current visual position
+                candyAnimations[row][col].x =
+                    candyAnimations[row][col].startX;
+                candyAnimations[row][col].y =
+                    candyAnimations[row][col].startY;
+                // Reset animation progress
+                candyAnimations[row][col].progress = 0.0f;
+                // Start the falling animation
+                candyAnimations[row][col].isAnimating = true;
             }
         }
     }
@@ -444,31 +508,44 @@ void calculateScore()
     }
 }
 
+// Start one round of match resolution
 void resolveMatches()
 {
-    while (true)
+    // Calculate points for the current matches
+    calculateScore();
+    // Start the shrinking animation for matched candies
+    for (int row = 0; row < ROWS; row++)
     {
-        checkMatches();
-        bool foundMatch = false;
-        for (int row = 0; row < ROWS; row++)
+        for (int col = 0; col < COLS; col++)
         {
-            for (int col = 0; col < COLS; col++)
+            if (matched[row][col])
             {
-                if (matched[row][col])
-                {
-                    foundMatch = true;
-                }
+                // Keep the candy stationary while shrinking
+                candyAnimations[row][col].startX =
+                    candyAnimations[row][col].x;
+                candyAnimations[row][col].targetX =
+                    candyAnimations[row][col].x;
+                candyAnimations[row][col].startY =
+                    candyAnimations[row][col].y;
+                candyAnimations[row][col].targetY =
+                    candyAnimations[row][col].y;
+                // Remember the current size
+                candyAnimations[row][col].startScale =
+                    candyAnimations[row][col].scale;
+                // Shrink the candy completely
+                candyAnimations[row][col].targetScale = 0.0f;
+                // Reset animation progress
+                candyAnimations[row][col].progress = 0.0f;
+                // Start the disappearance animation
+                candyAnimations[row][col].isAnimating = true;
             }
         }
-        if (!foundMatch)
-        {
-            break;
-        }
-        calculateScore();
-        removeMatchedCandies();
-        applyGravity();
-        refillBoard();
     }
+
+    // Mark the shrinking phase as active
+    isRemovingMatches = true;
+    // Mark the board as resolving
+    isResolving = true;
 }
 
 int main()
@@ -493,13 +570,55 @@ int main()
                 if (event->getIf<sf::Event::MouseButtonPressed>()->button
                     == sf::Mouse::Button::Left)
                 {
-                    sf::Vector2i mousePosition = sf::Mouse::getPosition(window);
+                    sf::Vector2i mousePosition =
+                        sf::Mouse::getPosition(window);
 
                     selectCandy(mousePosition.x, mousePosition.y);
                 }
             }
         }
+        // Update all active animations
         updateAnimations();
+        // Check whether the board is resolving a cascade
+        if (isResolving && allAnimationsFinished())
+        {
+            // Check whether matched candies have finished shrinking
+            if (isRemovingMatches)
+            {
+                // Remove candies after their disappearance animation
+                removeMatchedCandies();
+                // Clear previous match information
+                for (int row = 0; row < ROWS; row++)
+                {
+                    for (int col = 0; col < COLS; col++)
+                    {
+                        matched[row][col] = false;
+                    }
+                }
+                // Finish the shrinking phase
+                isRemovingMatches = false;
+                // Apply gravity
+                applyGravity();
+                // Generate new candies
+                refillBoard();
+            }
+            else
+            {
+                // Check for new matches after falling animations
+                checkMatches();
+                if (hasMatches())
+                {
+                    // Start another cascade
+                    resolveMatches();
+                }
+                else
+                {
+                    // No more matches: finish resolving
+                    isResolving = false;
+                }
+            }
+        }
+
         window.clear(sf::Color(30, 30, 50));
         drawBoard(window);
         window.display();
