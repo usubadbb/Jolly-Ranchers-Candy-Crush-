@@ -6,7 +6,6 @@
 #include <fstream>
 #include <sstream>
 #include <string>
-#include <algorithm>
 #include <cctype>
 
 using namespace std;
@@ -422,15 +421,29 @@ string getPerformanceRank()
 }
 
 // Keep leaderboard entries ordered from highest to lowest score.
+// This manual Bubble Sort avoids needing the <algorithm> library.
 void sortLeaderboard()
 {
-    sort(leaderboard, leaderboard + leaderboardCount,
-        [](const LeaderboardEntry& a, const LeaderboardEntry& b)
+    for (int i = 0; i < leaderboardCount - 1; i++)
+    {
+        for (int j = 0; j < leaderboardCount - i - 1; j++)
         {
-            if (a.playerScore != b.playerScore)
-                return a.playerScore > b.playerScore;
-            return a.playerName < b.playerName;
-        });
+            bool shouldSwap = false;
+
+            if (leaderboard[j].playerScore < leaderboard[j + 1].playerScore)
+                shouldSwap = true;
+            else if (leaderboard[j].playerScore == leaderboard[j + 1].playerScore &&
+                leaderboard[j].playerName > leaderboard[j + 1].playerName)
+                shouldSwap = true;
+
+            if (shouldSwap)
+            {
+                LeaderboardEntry temp = leaderboard[j];
+                leaderboard[j] = leaderboard[j + 1];
+                leaderboard[j + 1] = temp;
+            }
+        }
+    }
 }
 
 // Add Maam Anousha if she is not already present. Her saved score is retained.
@@ -477,7 +490,8 @@ void loadLeaderboard()
                 {
                     if (leaderboard[i].playerName == name)
                     {
-                        leaderboard[i].playerScore = max(leaderboard[i].playerScore, savedScore);
+                        if (savedScore > leaderboard[i].playerScore)
+                            leaderboard[i].playerScore = savedScore;
                         alreadyExists = true;
                         break;
                     }
@@ -606,7 +620,6 @@ void drawGameOver(sf::RenderWindow& window)
     personalBestText.setFillColor(sf::Color(255, 180, 100));
     personalBestText.setPosition({ 275.0f, 190.0f });
     window.draw(personalBestText);
-
 
     sf::Text timeUpText(font, "Time's up!", 22);
     timeUpText.setFillColor(sf::Color::White);
