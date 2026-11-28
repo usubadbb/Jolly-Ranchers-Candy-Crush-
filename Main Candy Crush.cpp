@@ -1,14 +1,14 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Audio.hpp>
 #include <iostream>
-#include <algorithm>
 #include <cstdlib>
 #include <ctime>
+#include <cmath>
 #include <fstream>
 #include <string>
 #include <optional>
 #include <map>
-
+#include <vector>
 using namespace std;
 
 struct CandyAnimation
@@ -348,7 +348,7 @@ void drawBoard(sf::RenderWindow& window)
                 sf::Vector2u textureSize = candyTextures[board[row][col]].getSize();
                 float widthScale = 64.0f / static_cast<float>(textureSize.x);
                 float heightScale = 64.0f / static_cast<float>(textureSize.y);
-                float fitScale = min(widthScale, heightScale);
+                float fitScale = (widthScale < heightScale ? widthScale : heightScale);
 
                 sf::Sprite sprite(candyTextures[board[row][col]]);
                 sprite.setOrigin({ textureSize.x / 2.0f, textureSize.y / 2.0f });
@@ -459,10 +459,18 @@ bool allAnimationsFinished()
     return true;
 }
 
+template <typename T>
+void safeSwap(T& first, T& second)
+{
+    T temporary = first;
+    first = second;
+    second = temporary;
+}
+
 void swapCandies(int row1, int col1, int row2, int col2)
 {
-    swap(board[row1][col1], board[row2][col2]);
-    swap(moveBonus[row1][col1], moveBonus[row2][col2]);
+    safeSwap(board[row1][col1], board[row2][col2]);
+    safeSwap(moveBonus[row1][col1], moveBonus[row2][col2]);
 }
 
 void selectCandy(int mouseX, int mouseY)
@@ -700,7 +708,7 @@ void sortLeaderboard()
                 leaderboard[j].playerName > leaderboard[j + 1].playerName)
                 shouldSwap = true;
 
-            if (shouldSwap) swap(leaderboard[j], leaderboard[j + 1]);
+            if (shouldSwap) safeSwap(leaderboard[j], leaderboard[j + 1]);
         }
 }
 
@@ -731,7 +739,7 @@ void loadLeaderboard()
                     if (leaderboard[i].playerName == name)
                     {
                         leaderboard[i].playerScore =
-                            max(leaderboard[i].playerScore, savedScore);
+                            (leaderboard[i].playerScore > savedScore ? leaderboard[i].playerScore : savedScore);
                         found = true;
                         break;
                     }
@@ -776,7 +784,7 @@ void submitScoreToLeaderboard()
         if (leaderboard[i].playerName == playerName)
         {
             leaderboard[i].playerScore =
-                max(leaderboard[i].playerScore, score);
+                (leaderboard[i].playerScore > score ? leaderboard[i].playerScore : score);
             found = true;
             break;
         }
@@ -912,7 +920,7 @@ void drawNameEntry(sf::RenderWindow& window)
             sf::Vector2u size = candyTextures[i].getSize();
             float widthScale = 58.0f / static_cast<float>(size.x);
             float heightScale = 58.0f / static_cast<float>(size.y);
-            float scale = min(widthScale, heightScale);
+            float scale = (widthScale < heightScale ? widthScale : heightScale);
             candy.setOrigin({ size.x / 2.0f, size.y / 2.0f });
             candy.setScale({ scale, scale });
             candy.setPosition({ 302.0f + i * 134.0f, 165.0f });
