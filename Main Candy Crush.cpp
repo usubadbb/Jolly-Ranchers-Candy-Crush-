@@ -8,7 +8,7 @@
 #include <string>
 #include <optional>
 #include <map>
-
+#include <vector>
 using namespace std;
 
 struct CandyAnimation
@@ -27,55 +27,65 @@ struct LeaderboardEntry
     int playerScore;
 };
 
-// Candy animation settings
-sf::Clock animationClock;
-const float ANIMATION_DURATION = 0.3f;
-
-// Board settings
 const int ROWS = 9;
 const int COLS = 9;
+const int STARTING_MOVES = 20;
+const int MAX_LEADERBOARD_ENTRIES = 100;
+const int DISPLAYED_LEADERBOARD_ENTRIES = 5;
+const float ANIMATION_DURATION = 0.3f;
+
+const string PERSONAL_BEST_FILE = "personal_bests.txt";
+const string LEADERBOARD_FILE = "leaderboard.txt";
+
+sf::Clock animationClock;
+
 int board[ROWS][COLS];
 CandyAnimation candyAnimations[ROWS][COLS];
 bool matched[ROWS][COLS];
 
-// Time Bonus Candy settings
-bool timeBonus[ROWS][COLS] = {};
-int successfulMatches = 0;
+// A special candy with a golden "+" badge grants one extra move when matched.
+bool moveBonus[ROWS][COLS] = {};
+int successfulMoves = 0;
+int movesRemaining = STARTING_MOVES;
 
 int selectedRow = -1;
 int selectedCol = -1;
 
-// Player and score information
-string playerName = "";
+string playerName;
 int score = 0;
 int personalBest = 0;
-
-// Individual Personal Best records
 map<string, int> personalBests;
-const string PERSONAL_BEST_FILE = "personal_bests.txt";
 
-// Jolly Rancher candy artwork: indices match the candy IDs used by board[][].
 sf::Texture candyTextures[5];
 bool candyTexturesLoaded = false;
+
+LeaderboardEntry leaderboard[MAX_LEADERBOARD_ENTRIES];
+int leaderboardCount = 0;
+
+bool nameEntryScreen = true;
+bool gameOver = false;
+bool scoreSubmitted = false;
+bool isResolving = false;
+bool isRemovingMatches = false;
 
 bool loadCandyTextures()
 {
     const string textureFiles[5] = {
-        "assets/watermelon.png", // 0: Watermelon
-        "assets/cherry.png",     // 1: Cherry
-        "assets/grape.png",      // 2: Grapes
-        "assets/blueberry.png",  // 3: Blueberry
-        "assets/green_apple.png" // 4: Green Apple
+        "assets/watermelon.png",
+        "assets/cherry.png",
+        "assets/grape.png",
+        "assets/blueberry.png",
+        "assets/green_apple.png"
     };
 
     candyTexturesLoaded = true;
 
-    for (int i = 0; i < 5; i++)
+    for (int i = 0; i < 5; ++i)
     {
         if (!candyTextures[i].loadFromFile(textureFiles[i]))
         {
             cerr << "Could not load candy texture: " << textureFiles[i]
-                << ". Check that the assets folder is beside the program working directory." << endl;
+                << ". Check that the assets folder is beside the program's working directory.\n";
             candyTexturesLoaded = false;
         }
         else
@@ -83,24 +93,14 @@ bool loadCandyTextures()
             candyTextures[i].setSmooth(true);
         }
     }
-
     return candyTexturesLoaded;
 }
 
-// ==========================================
-// SFML 3 AUDIO MANAGER
-// ==========================================
-// Place these files in an "audio" folder beside the program's working directory:
-// select.wav, swap.wav, gameover.wav, background.mp3
+// SFML 3 audio manager.
 struct GameAudio
 {
-    sf::SoundBuffer selectBuffer;
-    sf::SoundBuffer swapBuffer;
-    sf::SoundBuffer gameOverBuffer;
-
-    sf::Sound selectSound;
-    sf::Sound swapSound;
-    sf::Sound gameOverSound;
+    sf::SoundBuffer selectBuffer, swapBuffer, gameOverBuffer;
+    sf::Sound selectSound, swapSound, gameOverSound;
     sf::Music backgroundMusic;
 
     bool selectLoaded = false;
@@ -120,10 +120,10 @@ struct GameAudio
         gameOverLoaded = gameOverBuffer.loadFromFile("audio/gameover.wav");
         musicLoaded = backgroundMusic.openFromFile("audio/background.mp3");
 
-        if (!selectLoaded) cerr << "Could not load audio/select.wav" << endl;
-        if (!swapLoaded) cerr << "Could not load audio/swap.wav" << endl;
-        if (!gameOverLoaded) cerr << "Could not load audio/gameover.wav" << endl;
-        if (!musicLoaded) cerr << "Could not load audio/background.mp3" << endl;
+        if (!selectLoaded) cerr << "Could not load audio/select.wav\n";
+        if (!swapLoaded) cerr << "Could not load audio/swap.wav\n";
+        if (!gameOverLoaded) cerr << "Could not load audio/gameover.wav\n";
+        if (!musicLoaded) cerr << "Could not load audio/background.mp3\n";
 
         selectSound.setVolume(65.0f);
         swapSound.setVolume(75.0f);
@@ -148,7 +148,8 @@ struct GameAudio
 
     void playBackgroundMusic()
     {
-        if (musicLoaded && backgroundMusic.getStatus() != sf::SoundSource::Status::Playing)
+        if (musicLoaded &&
+            backgroundMusic.getStatus() != sf::SoundSource::Status::Playing)
             backgroundMusic.play();
     }
 
@@ -161,30 +162,8 @@ struct GameAudio
 
 GameAudio audio;
 
-// Leaderboard settings
-const int MAX_LEADERBOARD_ENTRIES = 100;
-const int DISPLAYED_LEADERBOARD_ENTRIES = 5;
-const string LEADERBOARD_FILE = "leaderboard.txt";
-const string SPECIAL_PLAYER_NAME = "Maam Anousha";
-const int SPECIAL_PLAYER_SCORE = 2000;
-LeaderboardEntry leaderboard[MAX_LEADERBOARD_ENTRIES];
-int leaderboardCount = 0;
-
-// Game timer
-const float GAME_DURATION_SECONDS = 60.0f;
-float timeRemaining = GAME_DURATION_SECONDS;
-sf::Clock gameTimerClock;
-
-// Game states
-bool nameEntryScreen = true;
-bool gameOver = false;
-bool scoreSubmitted = false;
-bool isResolving = false;
-bool isRemovingMatches = false;
-
-// Function declarations
+// Function declarations.
 void initializeBoard();
-void saveLeaderboard();
 void checkMatches();
 void removeMatchedCandies();
 void applyGravity();
@@ -194,98 +173,77 @@ bool allAnimationsFinished();
 void resolveMatches();
 void calculateScore();
 bool hasMatches();
-void updateGameTimer();
 void drawGameOver(sf::RenderWindow& window);
-void spawnTimeBonus();
+void spawnMoveBonus();
+void saveLeaderboard();
+void finishGame();
 
-// Initialize a board without starting with automatic matches.
+// Initialize a board without automatic matches.
 void initializeBoard()
 {
-    for (int row = 0; row < ROWS; row++)
+    for (int row = 0; row < ROWS; ++row)
     {
-        for (int col = 0; col < COLS; col++)
+        for (int col = 0; col < COLS; ++col)
         {
             int candy;
             do
             {
                 candy = rand() % 5;
-            } while (
-                (col >= 2 && board[row][col - 1] == candy && board[row][col - 2] == candy) ||
-                (row >= 2 && board[row - 1][col] == candy && board[row - 2][col] == candy)
-                );
+            } while ((col >= 2 && board[row][col - 1] == candy &&
+                board[row][col - 2] == candy) ||
+                (row >= 2 && board[row - 1][col] == candy &&
+                    board[row - 2][col] == candy));
 
             board[row][col] = candy;
-            timeBonus[row][col] = false;
+            moveBonus[row][col] = false;
 
-            candyAnimations[row][col].x = 70.0f + col * 75.0f;
-            candyAnimations[row][col].y = 70.0f + row * 75.0f;
-            candyAnimations[row][col].startX = candyAnimations[row][col].x;
-            candyAnimations[row][col].startY = candyAnimations[row][col].y;
-            candyAnimations[row][col].targetX = candyAnimations[row][col].x;
-            candyAnimations[row][col].targetY = candyAnimations[row][col].y;
-            candyAnimations[row][col].progress = 1.0f;
-            candyAnimations[row][col].scale = 1.0f;
-            candyAnimations[row][col].startScale = 1.0f;
-            candyAnimations[row][col].targetScale = 1.0f;
-            candyAnimations[row][col].isAnimating = false;
+            CandyAnimation& a = candyAnimations[row][col];
+            a.x = a.startX = a.targetX = 70.0f + col * 75.0f;
+            a.y = a.startY = a.targetY = 70.0f + row * 75.0f;
+            a.progress = 1.0f;
+            a.scale = a.startScale = a.targetScale = 1.0f;
+            a.isAnimating = false;
             matched[row][col] = false;
         }
     }
 }
 
-// Spawn a Time Bonus Candy on a random candy that is not being removed.
-void spawnTimeBonus()
+// Place a move-bonus candy on a random occupied cell.
+void spawnMoveBonus()
 {
     int availableCells = 0;
 
-    for (int row = 0; row < ROWS; row++)
-    {
-        for (int col = 0; col < COLS; col++)
-        {
-            if (board[row][col] != -1 &&
-                !matched[row][col] &&
-                !timeBonus[row][col])
-            {
-                availableCells++;
-            }
-        }
-    }
+    for (int row = 0; row < ROWS; ++row)
+        for (int col = 0; col < COLS; ++col)
+            if (board[row][col] != -1 && !matched[row][col] &&
+                !moveBonus[row][col])
+                ++availableCells;
 
-    if (availableCells == 0)
-        return;
+    if (availableCells == 0) return;
 
     int chosenCell = rand() % availableCells;
-
-    for (int row = 0; row < ROWS; row++)
+    for (int row = 0; row < ROWS; ++row)
     {
-        for (int col = 0; col < COLS; col++)
+        for (int col = 0; col < COLS; ++col)
         {
-            if (board[row][col] != -1 &&
-                !matched[row][col] &&
-                !timeBonus[row][col])
+            if (board[row][col] != -1 && !matched[row][col] &&
+                !moveBonus[row][col])
             {
-                if (chosenCell == 0)
+                if (chosenCell-- == 0)
                 {
-                    timeBonus[row][col] = true;
+                    moveBonus[row][col] = true;
                     return;
                 }
-
-                chosenCell--;
             }
         }
     }
 }
 
-// Subtle fruit-candy atmosphere: soft color haze, tiny bubbles and sparkles.
-// These are lightweight SFML shapes, so no extra image assets are required.
 void drawThemeBackground(sf::RenderWindow& window)
 {
-    // Soft colored glow spots behind the board.
     const sf::Color glowColors[5] = {
-        sf::Color(255, 75, 115, 18),
-        sf::Color(70, 190, 255, 16),
-        sf::Color(170, 90, 255, 17),
-        sf::Color(90, 235, 150, 15),
+        sf::Color(255, 75, 115, 18), sf::Color(70, 190, 255, 16),
+        sf::Color(170, 90, 255, 17), sf::Color(90, 235, 150, 15),
         sf::Color(255, 190, 70, 14)
     };
 
@@ -301,12 +259,11 @@ void drawThemeBackground(sf::RenderWindow& window)
         window.draw(glow);
     }
 
-    // Sparse, low-contrast candy bubbles across the background.
     for (int i = 0; i < 34; ++i)
     {
-        const float x = static_cast<float>((i * 137 + 41) % 1080);
-        const float y = static_cast<float>((i * 83 + 29) % 780);
-        const float radius = 2.0f + static_cast<float>(i % 4);
+        float x = static_cast<float>((i * 137 + 41) % 1080);
+        float y = static_cast<float>((i * 83 + 29) % 780);
+        float radius = 2.0f + static_cast<float>(i % 4);
 
         sf::CircleShape bubble(radius);
         bubble.setPosition({ x, y });
@@ -316,7 +273,6 @@ void drawThemeBackground(sf::RenderWindow& window)
         window.draw(bubble);
     }
 
-    // A faint frame gives the play area a polished candy-wrapper feel.
     sf::RectangleShape frame({ 700.0f, 700.0f });
     frame.setPosition({ 42.0f, 42.0f });
     frame.setFillColor(sf::Color::Transparent);
@@ -329,7 +285,6 @@ void drawBoard(sf::RenderWindow& window)
 {
     static sf::Font font("C:/Windows/Fonts/arial.ttf");
 
-    // Unified HUD strip: all three labels sit on one line, aligned to the board.
     sf::RectangleShape hudPanel({ 675.0f, 46.0f });
     hudPanel.setPosition({ 62.5f, 7.0f });
     hudPanel.setFillColor(sf::Color(38, 35, 69, 235));
@@ -344,25 +299,28 @@ void drawBoard(sf::RenderWindow& window)
 
     sf::Text nameText(font, playerName, 20);
     nameText.setFillColor(sf::Color(190, 225, 255));
-    const sf::FloatRect nameBounds = nameText.getLocalBounds();
-    nameText.setPosition({ 400.0f - (nameBounds.position.x + nameBounds.size.x / 2.0f), 16.0f });
+    sf::FloatRect nameBounds = nameText.getLocalBounds();
+    nameText.setPosition({
+        400.0f - (nameBounds.position.x + nameBounds.size.x / 2.0f), 16.0f
+        });
     window.draw(nameText);
 
-    sf::Text timerText(font, "TIME  " + to_string(static_cast<int>(ceil(timeRemaining))), 21);
-    timerText.setFillColor(timeRemaining <= 10.0f
-        ? sf::Color(255, 125, 135)
-        : sf::Color(170, 255, 205));
-    const sf::FloatRect timerBounds = timerText.getLocalBounds();
-    timerText.setPosition({ 722.0f - (timerBounds.position.x + timerBounds.size.x), 15.0f });
-    window.draw(timerText);
+    sf::Text movesText(font, "MOVES  " + to_string(movesRemaining), 21);
+    movesText.setFillColor(movesRemaining <= 5
+        ? sf::Color(255, 125, 135) : sf::Color(170, 255, 205));
+    sf::FloatRect movesBounds = movesText.getLocalBounds();
+    movesText.setPosition({
+        722.0f - (movesBounds.position.x + movesBounds.size.x), 15.0f
+        });
+    window.draw(movesText);
 
     const float cellSize = 75.0f;
     const float startX = 62.5f;
     const float startY = 62.5f;
 
-    for (int row = 0; row < ROWS; row++)
+    for (int row = 0; row < ROWS; ++row)
     {
-        for (int col = 0; col < COLS; col++)
+        for (int col = 0; col < COLS; ++col)
         {
             sf::RectangleShape cell({ 73.0f, 73.0f });
             cell.setPosition({ startX + col * cellSize, startY + row * cellSize });
@@ -371,44 +329,35 @@ void drawBoard(sf::RenderWindow& window)
             cell.setOutlineColor(sf::Color(150, 190, 255, 55));
             window.draw(cell);
 
-            // Very faint diagonal sheen on each tile.
-            sf::RectangleShape tileSheen({ 63.0f, 2.0f });
-            tileSheen.setPosition({ startX + col * cellSize + 5.0f,
-                                    startY + row * cellSize + 6.0f });
-            tileSheen.setFillColor(sf::Color(255, 255, 255, 16));
-            window.draw(tileSheen);
+            sf::RectangleShape sheen({ 63.0f, 2.0f });
+            sheen.setPosition({ startX + col * cellSize + 5.0f,
+                                startY + row * cellSize + 6.0f });
+            sheen.setFillColor(sf::Color(255, 255, 255, 16));
+            window.draw(sheen);
 
-            if (board[row][col] == -1)
-                continue;
+            if (board[row][col] == -1) continue;
 
-            const float candyScale = candyAnimations[row][col].scale;
-            const sf::Vector2f candyCenter(
+            float candyScale = candyAnimations[row][col].scale;
+            sf::Vector2f candyCenter(
                 candyAnimations[row][col].x + 30.0f,
                 candyAnimations[row][col].y + 30.0f
             );
 
-            // Draw the matching Jolly Rancher sprite, preserving its aspect ratio.
             if (candyTexturesLoaded && board[row][col] >= 0 && board[row][col] < 5)
             {
-                const sf::Vector2u textureSize = candyTextures[board[row][col]].getSize();
-                const float widthScale = 64.0f / static_cast<float>(textureSize.x);
-                const float heightScale = 64.0f / static_cast<float>(textureSize.y);
-                float fitScale = widthScale;
-                if (heightScale < fitScale)
-                    fitScale = heightScale;
+                sf::Vector2u textureSize = candyTextures[board[row][col]].getSize();
+                float widthScale = 64.0f / static_cast<float>(textureSize.x);
+                float heightScale = 64.0f / static_cast<float>(textureSize.y);
+                float fitScale = (widthScale < heightScale ? widthScale : heightScale);
 
-                sf::Sprite candySprite(candyTextures[board[row][col]]);
-                candySprite.setOrigin({
-                    textureSize.x / 2.0f,
-                    textureSize.y / 2.0f
-                    });
-                candySprite.setScale({ fitScale * candyScale, fitScale * candyScale });
-                candySprite.setPosition(candyCenter);
-                window.draw(candySprite);
+                sf::Sprite sprite(candyTextures[board[row][col]]);
+                sprite.setOrigin({ textureSize.x / 2.0f, textureSize.y / 2.0f });
+                sprite.setScale({ fitScale * candyScale, fitScale * candyScale });
+                sprite.setPosition(candyCenter);
+                window.draw(sprite);
             }
             else
             {
-                // Colored-circle fallback if an image file cannot be loaded.
                 sf::CircleShape candy(30.0f);
                 candy.setOrigin({ 30.0f, 30.0f });
                 candy.setScale({ candyScale, candyScale });
@@ -418,18 +367,16 @@ void drawBoard(sf::RenderWindow& window)
                 else if (board[row][col] == 1) candy.setFillColor(sf::Color(210, 10, 46));
                 else if (board[row][col] == 2) candy.setFillColor(sf::Color(150, 50, 200));
                 else if (board[row][col] == 3) candy.setFillColor(sf::Color::Blue);
-                else if (board[row][col] == 4) candy.setFillColor(sf::Color::Green);
-
+                else candy.setFillColor(sf::Color::Green);
                 window.draw(candy);
             }
 
-            // Small glassy reflection: decorative only, the original candy artwork stays intact.
-            sf::CircleShape candyGlint(5.0f);
-            candyGlint.setPosition({ candyCenter.x - 16.0f * candyScale,
-                                     candyCenter.y - 19.0f * candyScale });
-            candyGlint.setScale({ 1.0f, 0.62f });
-            candyGlint.setFillColor(sf::Color(255, 255, 255, 105));
-            window.draw(candyGlint);
+            sf::CircleShape glint(5.0f);
+            glint.setPosition({ candyCenter.x - 16.0f * candyScale,
+                                candyCenter.y - 19.0f * candyScale });
+            glint.setScale({ 1.0f, 0.62f });
+            glint.setFillColor(sf::Color(255, 255, 255, 105));
+            window.draw(glint);
 
             sf::CircleShape tinyGlint(2.2f);
             tinyGlint.setPosition({ candyCenter.x + 9.0f * candyScale,
@@ -437,7 +384,6 @@ void drawBoard(sf::RenderWindow& window)
             tinyGlint.setFillColor(sf::Color(255, 255, 255, 85));
             window.draw(tinyGlint);
 
-            // Keep the existing selection/match highlight visible above the sprite.
             if (matched[row][col] || (row == selectedRow && col == selectedCol))
             {
                 sf::CircleShape highlight(30.0f);
@@ -447,37 +393,32 @@ void drawBoard(sf::RenderWindow& window)
                 highlight.setFillColor(sf::Color::Transparent);
                 highlight.setOutlineThickness(3.0f);
                 highlight.setOutlineColor(
-                    matched[row][col] ? sf::Color::Cyan : sf::Color::Yellow
-                );
+                    matched[row][col] ? sf::Color::Cyan : sf::Color::Yellow);
                 window.draw(highlight);
             }
 
-            // Display a golden + badge on Time Bonus Candies.
-            if (timeBonus[row][col])
+            // Golden "+" identifies a candy that grants one extra move.
+            if (moveBonus[row][col])
             {
-                float scale = candyAnimations[row][col].scale;
-
-                sf::CircleShape bonusBadge(11.0f);
-                bonusBadge.setOrigin({ 11.0f, 11.0f });
-                bonusBadge.setScale({ scale, scale });
-                bonusBadge.setFillColor(sf::Color(255, 215, 0));
-                bonusBadge.setOutlineThickness(2.0f);
-                bonusBadge.setOutlineColor(sf::Color::White);
-                bonusBadge.setPosition({
+                sf::CircleShape badge(11.0f);
+                badge.setOrigin({ 11.0f, 11.0f });
+                badge.setScale({ candyScale, candyScale });
+                badge.setFillColor(sf::Color(255, 215, 0));
+                badge.setOutlineThickness(2.0f);
+                badge.setOutlineColor(sf::Color::White);
+                badge.setPosition({
                     candyAnimations[row][col].x + 52.0f,
                     candyAnimations[row][col].y + 10.0f
                     });
-
-                window.draw(bonusBadge);
+                window.draw(badge);
 
                 sf::Text plusText(font, "+", 17);
                 plusText.setFillColor(sf::Color::Black);
-                plusText.setScale({ scale, scale });
+                plusText.setScale({ candyScale, candyScale });
                 plusText.setPosition({
                     candyAnimations[row][col].x + 46.0f,
-                    candyAnimations[row][col].y + 0.0f
+                    candyAnimations[row][col].y
                     });
-
                 window.draw(plusText);
             }
         }
@@ -493,55 +434,48 @@ void updateAnimations()
 {
     float deltaTime = animationClock.restart().asSeconds();
 
-    for (int row = 0; row < ROWS; row++)
-    {
-        for (int col = 0; col < COLS; col++)
+    for (int row = 0; row < ROWS; ++row)
+        for (int col = 0; col < COLS; ++col)
         {
-            if (!candyAnimations[row][col].isAnimating)
-                continue;
+            CandyAnimation& a = candyAnimations[row][col];
+            if (!a.isAnimating) continue;
 
-            CandyAnimation& animation = candyAnimations[row][col];
-            animation.progress += deltaTime / ANIMATION_DURATION;
+            a.progress += deltaTime / ANIMATION_DURATION;
+            if (a.progress > 1.0f) a.progress = 1.0f;
 
-            if (animation.progress > 1.0f)
-                animation.progress = 1.0f;
+            a.x = lerp(a.startX, a.targetX, a.progress);
+            a.y = lerp(a.startY, a.targetY, a.progress);
+            a.scale = lerp(a.startScale, a.targetScale, a.progress);
 
-            animation.x = lerp(animation.startX, animation.targetX, animation.progress);
-            animation.y = lerp(animation.startY, animation.targetY, animation.progress);
-            animation.scale = lerp(animation.startScale, animation.targetScale, animation.progress);
-
-            if (animation.progress >= 1.0f)
-                animation.isAnimating = false;
+            if (a.progress >= 1.0f) a.isAnimating = false;
         }
-    }
 }
 
 bool allAnimationsFinished()
 {
-    for (int row = 0; row < ROWS; row++)
-        for (int col = 0; col < COLS; col++)
-            if (candyAnimations[row][col].isAnimating)
-                return false;
-
+    for (int row = 0; row < ROWS; ++row)
+        for (int col = 0; col < COLS; ++col)
+            if (candyAnimations[row][col].isAnimating) return false;
     return true;
+}
+
+template <typename T>
+void safeSwap(T& first, T& second)
+{
+    T temporary = first;
+    first = second;
+    second = temporary;
 }
 
 void swapCandies(int row1, int col1, int row2, int col2)
 {
-    int temp = board[row1][col1];
-    board[row1][col1] = board[row2][col2];
-    board[row2][col2] = temp;
-
-    // The bonus badge belongs to the candy, so swap it too.
-    bool tempBonus = timeBonus[row1][col1];
-    timeBonus[row1][col1] = timeBonus[row2][col2];
-    timeBonus[row2][col2] = tempBonus;
+    safeSwap(board[row1][col1], board[row2][col2]);
+    safeSwap(moveBonus[row1][col1], moveBonus[row2][col2]);
 }
 
 void selectCandy(int mouseX, int mouseY)
 {
-    if (isResolving || timeRemaining <= 0.0f)
-        return;
+    if (isResolving || movesRemaining <= 0) return;
 
     const float cellSize = 75.0f;
     const float startX = 62.5f;
@@ -550,60 +484,61 @@ void selectCandy(int mouseX, int mouseY)
     int col = static_cast<int>((mouseX - startX) / cellSize);
     int row = static_cast<int>((mouseY - startY) / cellSize);
 
-    if (row >= 0 && row < ROWS && col >= 0 && col < COLS)
+    if (row < 0 || row >= ROWS || col < 0 || col >= COLS)
     {
-        if (selectedRow == -1 && selectedCol == -1)
-        {
-            selectedRow = row;
-            selectedCol = col;
-            audio.playSelect();
-        }
-        else if ((row == selectedRow && (col == selectedCol - 1 || col == selectedCol + 1)) ||
-            (col == selectedCol && (row == selectedRow - 1 || row == selectedRow + 1)))
-        {
-            swapCandies(selectedRow, selectedCol, row, col);
-            audio.playSwap();
-            checkMatches();
+        selectedRow = selectedCol = -1;
+        return;
+    }
 
-            if (hasMatches())
-            {
-                // Count successful player moves, not cascade matches.
-                successfulMatches++;
+    if (selectedRow == -1)
+    {
+        selectedRow = row;
+        selectedCol = col;
+        audio.playSelect();
+        return;
+    }
 
-                // Spawn a bonus candy after every 5 successful moves.
-                if (successfulMatches % 5 == 0)
-                    spawnTimeBonus();
+    bool adjacent =
+        (row == selectedRow && (col == selectedCol - 1 || col == selectedCol + 1)) ||
+        (col == selectedCol && (row == selectedRow - 1 || row == selectedRow + 1));
 
-                resolveMatches();
-            }
-            else
-            {
-                swapCandies(selectedRow, selectedCol, row, col);
-            }
+    if (!adjacent)
+    {
+        selectedRow = row;
+        selectedCol = col;
+        audio.playSelect();
+        return;
+    }
 
-            selectedRow = -1;
-            selectedCol = -1;
-        }
-        else
-        {
-            selectedRow = row;
-            selectedCol = col;
-            audio.playSelect();
-        }
+    swapCandies(selectedRow, selectedCol, row, col);
+    audio.playSwap();
+    checkMatches();
+
+    if (hasMatches())
+    {
+        // Only a successful player swap consumes a move.
+        --movesRemaining;
+        ++successfulMoves;
+
+        // Spawn a special +1-move candy after every five successful swaps.
+        if (successfulMoves % 5 == 0)
+            spawnMoveBonus();
+
+        resolveMatches();
     }
     else
     {
-        selectedRow = -1;
-        selectedCol = -1;
+        // Invalid swaps are reversed and do not cost a move.
+        swapCandies(selectedRow, selectedCol, row, col);
     }
+
+    selectedRow = selectedCol = -1;
 }
 
 void checkHorizontalMatches()
 {
-    for (int row = 0; row < ROWS; row++)
-    {
-        for (int col = 0; col < COLS - 2; col++)
-        {
+    for (int row = 0; row < ROWS; ++row)
+        for (int col = 0; col < COLS - 2; ++col)
             if (board[row][col] != -1 &&
                 board[row][col] == board[row][col + 1] &&
                 board[row][col] == board[row][col + 2])
@@ -612,16 +547,12 @@ void checkHorizontalMatches()
                 matched[row][col + 1] = true;
                 matched[row][col + 2] = true;
             }
-        }
-    }
 }
 
 void checkVerticalMatches()
 {
-    for (int col = 0; col < COLS; col++)
-    {
-        for (int row = 0; row < ROWS - 2; row++)
-        {
+    for (int col = 0; col < COLS; ++col)
+        for (int row = 0; row < ROWS - 2; ++row)
             if (board[row][col] != -1 &&
                 board[row][col] == board[row + 1][col] &&
                 board[row][col] == board[row + 2][col])
@@ -630,14 +561,12 @@ void checkVerticalMatches()
                 matched[row + 1][col] = true;
                 matched[row + 2][col] = true;
             }
-        }
-    }
 }
 
 void checkMatches()
 {
-    for (int row = 0; row < ROWS; row++)
-        for (int col = 0; col < COLS; col++)
+    for (int row = 0; row < ROWS; ++row)
+        for (int col = 0; col < COLS; ++col)
             matched[row][col] = false;
 
     checkHorizontalMatches();
@@ -646,157 +575,119 @@ void checkMatches()
 
 bool hasMatches()
 {
-    for (int row = 0; row < ROWS; row++)
-        for (int col = 0; col < COLS; col++)
-            if (matched[row][col])
-                return true;
-
+    for (int row = 0; row < ROWS; ++row)
+        for (int col = 0; col < COLS; ++col)
+            if (matched[row][col]) return true;
     return false;
 }
 
 void removeMatchedCandies()
 {
-    for (int row = 0; row < ROWS; row++)
-    {
-        for (int col = 0; col < COLS; col++)
-        {
+    for (int row = 0; row < ROWS; ++row)
+        for (int col = 0; col < COLS; ++col)
             if (matched[row][col])
             {
                 board[row][col] = -1;
-                timeBonus[row][col] = false;
+                moveBonus[row][col] = false;
             }
-        }
-    }
 }
 
 void applyGravity()
 {
-    for (int col = 0; col < COLS; col++)
+    for (int col = 0; col < COLS; ++col)
     {
         int writeRow = ROWS - 1;
 
-        for (int row = ROWS - 1; row >= 0; row--)
+        for (int row = ROWS - 1; row >= 0; --row)
         {
             if (board[row][col] != -1)
             {
                 board[writeRow][col] = board[row][col];
                 candyAnimations[writeRow][col] = candyAnimations[row][col];
+                moveBonus[writeRow][col] = moveBonus[row][col];
 
-                // Keep the bonus badge attached to its candy.
-                timeBonus[writeRow][col] = timeBonus[row][col];
+                if (writeRow != row) moveBonus[row][col] = false;
 
-                if (writeRow != row)
-                    timeBonus[row][col] = false;
-
-                candyAnimations[writeRow][col].startX = candyAnimations[writeRow][col].x;
-                candyAnimations[writeRow][col].startY = candyAnimations[writeRow][col].y;
-                candyAnimations[writeRow][col].targetX = 62.5f + col * 75.0f + 7.5f;
-                candyAnimations[writeRow][col].targetY = 62.5f + writeRow * 75.0f + 7.5f;
-                candyAnimations[writeRow][col].startScale = candyAnimations[writeRow][col].scale;
-                candyAnimations[writeRow][col].targetScale = 1.0f;
-                candyAnimations[writeRow][col].progress = 0.0f;
-
-                candyAnimations[writeRow][col].isAnimating =
-                    (candyAnimations[writeRow][col].startY != candyAnimations[writeRow][col].targetY);
-
-                writeRow--;
+                CandyAnimation& a = candyAnimations[writeRow][col];
+                a.startX = a.x;
+                a.startY = a.y;
+                a.targetX = 70.0f + col * 75.0f;
+                a.targetY = 70.0f + writeRow * 75.0f;
+                a.startScale = a.scale;
+                a.targetScale = 1.0f;
+                a.progress = 0.0f;
+                a.isAnimating = (a.startY != a.targetY);
+                --writeRow;
             }
         }
 
         while (writeRow >= 0)
         {
             board[writeRow][col] = -1;
-            timeBonus[writeRow][col] = false;
-            writeRow--;
+            moveBonus[writeRow][col] = false;
+            --writeRow;
         }
     }
 }
 
 void refillBoard()
 {
-    for (int row = 0; row < ROWS; row++)
-    {
-        for (int col = 0; col < COLS; col++)
-        {
+    for (int row = 0; row < ROWS; ++row)
+        for (int col = 0; col < COLS; ++col)
             if (board[row][col] == -1)
             {
                 board[row][col] = rand() % 5;
-                timeBonus[row][col] = false;
+                moveBonus[row][col] = false;
 
-                CandyAnimation& animation = candyAnimations[row][col];
-                animation.scale = animation.startScale = animation.targetScale = 1.0f;
-                animation.targetX = 62.5f + col * 75.0f + 7.5f;
-                animation.targetY = 62.5f + row * 75.0f + 7.5f;
-                animation.startX = animation.targetX;
-                animation.startY = animation.targetY - (row + 1) * 75.0f - 60.0f;
-                animation.x = animation.startX;
-                animation.y = animation.startY;
-                animation.progress = 0.0f;
-                animation.isAnimating = true;
+                CandyAnimation& a = candyAnimations[row][col];
+                a.scale = a.startScale = a.targetScale = 1.0f;
+                a.targetX = 70.0f + col * 75.0f;
+                a.targetY = 70.0f + row * 75.0f;
+                a.startX = a.targetX;
+                a.startY = a.targetY - (row + 1) * 75.0f - 60.0f;
+                a.x = a.startX;
+                a.y = a.startY;
+                a.progress = 0.0f;
+                a.isAnimating = true;
             }
-        }
-    }
 }
 
 void calculateScore()
 {
-    for (int row = 0; row < ROWS; row++)
-    {
-        for (int col = 0; col < COLS; col++)
-        {
+    for (int row = 0; row < ROWS; ++row)
+        for (int col = 0; col < COLS; ++col)
             if (matched[row][col])
             {
                 score += 10;
 
-                // Matching a Time Bonus Candy awards 5 extra seconds.
-                if (timeBonus[row][col])
+                // Matching a special candy restores one move.
+                if (moveBonus[row][col])
                 {
-                    timeRemaining += 5.0f;
-                    timeBonus[row][col] = false;
+                    ++movesRemaining;
+                    moveBonus[row][col] = false;
                 }
             }
-        }
-    }
 }
 
 void resolveMatches()
 {
     calculateScore();
 
-    for (int row = 0; row < ROWS; row++)
-    {
-        for (int col = 0; col < COLS; col++)
-        {
+    for (int row = 0; row < ROWS; ++row)
+        for (int col = 0; col < COLS; ++col)
             if (matched[row][col])
             {
-                CandyAnimation& animation = candyAnimations[row][col];
-                animation.startX = animation.targetX = animation.x;
-                animation.startY = animation.targetY = animation.y;
-                animation.startScale = animation.scale;
-                animation.targetScale = 0.0f;
-                animation.progress = 0.0f;
-                animation.isAnimating = true;
+                CandyAnimation& a = candyAnimations[row][col];
+                a.startX = a.targetX = a.x;
+                a.startY = a.targetY = a.y;
+                a.startScale = a.scale;
+                a.targetScale = 0.0f;
+                a.progress = 0.0f;
+                a.isAnimating = true;
             }
-        }
-    }
 
     isRemovingMatches = true;
     isResolving = true;
-}
-
-void updateGameTimer()
-{
-    if (timeRemaining > 0.0f)
-    {
-        timeRemaining -= gameTimerClock.restart().asSeconds();
-
-        if (timeRemaining < 0.0f)
-            timeRemaining = 0.0f;
-    }
-    else
-    {
-        gameTimerClock.restart();
-    }
 }
 
 string getPerformanceRank()
@@ -806,49 +697,19 @@ string getPerformanceRank()
     return "Candy Rookie";
 }
 
-// Keep leaderboard entries ordered from highest to lowest score.
 void sortLeaderboard()
 {
-    for (int i = 0; i < leaderboardCount - 1; i++)
-    {
-        for (int j = 0; j < leaderboardCount - i - 1; j++)
+    for (int i = 0; i < leaderboardCount - 1; ++i)
+        for (int j = 0; j < leaderboardCount - i - 1; ++j)
         {
-            bool shouldSwap = false;
-
-            if (leaderboard[j].playerScore < leaderboard[j + 1].playerScore)
-                shouldSwap = true;
-            else if (leaderboard[j].playerScore == leaderboard[j + 1].playerScore &&
+            bool shouldSwap = leaderboard[j].playerScore <
+                leaderboard[j + 1].playerScore;
+            if (leaderboard[j].playerScore == leaderboard[j + 1].playerScore &&
                 leaderboard[j].playerName > leaderboard[j + 1].playerName)
                 shouldSwap = true;
 
-            if (shouldSwap)
-            {
-                LeaderboardEntry temp = leaderboard[j];
-                leaderboard[j] = leaderboard[j + 1];
-                leaderboard[j + 1] = temp;
-            }
+            if (shouldSwap) safeSwap(leaderboard[j], leaderboard[j + 1]);
         }
-    }
-}
-
-// Keep Maam Anousha's leaderboard score fixed at 2000.
-void ensureSpecialPlayerExists()
-{
-    for (int i = 0; i < leaderboardCount; i++)
-    {
-        if (leaderboard[i].playerName == SPECIAL_PLAYER_NAME)
-        {
-            leaderboard[i].playerScore = SPECIAL_PLAYER_SCORE;
-            return;
-        }
-    }
-
-    if (leaderboardCount < MAX_LEADERBOARD_ENTRIES)
-    {
-        leaderboard[leaderboardCount].playerName = SPECIAL_PLAYER_NAME;
-        leaderboard[leaderboardCount].playerScore = SPECIAL_PLAYER_SCORE;
-        leaderboardCount++;
-    }
 }
 
 void loadLeaderboard()
@@ -859,41 +720,33 @@ void loadLeaderboard()
 
     if (inputFile.is_open())
     {
-        while (getline(inputFile, line) && leaderboardCount < MAX_LEADERBOARD_ENTRIES)
+        while (getline(inputFile, line) &&
+            leaderboardCount < MAX_LEADERBOARD_ENTRIES)
         {
             size_t separator = line.rfind('|');
-
-            if (separator == string::npos)
-                continue;
+            if (separator == string::npos) continue;
 
             string name = line.substr(0, separator);
             string scoreText = line.substr(separator + 1);
-
-            if (name.empty())
-                continue;
+            if (name.empty() || name == "Maam Anousha") continue;
 
             try
             {
                 int savedScore = stoi(scoreText);
-                bool alreadyExists = false;
+                bool found = false;
 
-                for (int i = 0; i < leaderboardCount; i++)
-                {
+                for (int i = 0; i < leaderboardCount; ++i)
                     if (leaderboard[i].playerName == name)
                     {
-                        if (savedScore > leaderboard[i].playerScore)
-                            leaderboard[i].playerScore = savedScore;
-
-                        alreadyExists = true;
+                        leaderboard[i].playerScore =
+                            (leaderboard[i].playerScore > savedScore ? leaderboard[i].playerScore : savedScore);
+                        found = true;
                         break;
                     }
-                }
 
-                if (!alreadyExists)
+                if (!found)
                 {
-                    leaderboard[leaderboardCount].playerName = name;
-                    leaderboard[leaderboardCount].playerScore = savedScore;
-                    leaderboardCount++;
+                    leaderboard[leaderboardCount++] = { name, savedScore };
                 }
             }
             catch (...)
@@ -903,7 +756,6 @@ void loadLeaderboard()
         }
     }
 
-    ensureSpecialPlayerExists();
     sortLeaderboard();
     saveLeaderboard();
 }
@@ -911,61 +763,47 @@ void loadLeaderboard()
 void saveLeaderboard()
 {
     ofstream outputFile(LEADERBOARD_FILE);
-
     if (!outputFile.is_open())
     {
-        cerr << "Could not save " << LEADERBOARD_FILE << endl;
+        cerr << "Could not save " << LEADERBOARD_FILE << '\n';
         return;
     }
 
     sortLeaderboard();
-
-    for (int i = 0; i < leaderboardCount; i++)
-        outputFile << leaderboard[i].playerName << "|" << leaderboard[i].playerScore << '\n';
+    for (int i = 0; i < leaderboardCount; ++i)
+        outputFile << leaderboard[i].playerName << "|"
+        << leaderboard[i].playerScore << '\n';
 }
 
-// Update a player's best leaderboard result without creating duplicate names.
 void submitScoreToLeaderboard()
 {
-    if (scoreSubmitted || playerName.empty())
-        return;
+    if (scoreSubmitted || playerName.empty()) return;
 
-    bool foundPlayer = false;
-
-    for (int i = 0; i < leaderboardCount; i++)
-    {
+    bool found = false;
+    for (int i = 0; i < leaderboardCount; ++i)
         if (leaderboard[i].playerName == playerName)
         {
-            if (score > leaderboard[i].playerScore)
-                leaderboard[i].playerScore = score;
-
-            foundPlayer = true;
+            leaderboard[i].playerScore =
+                (leaderboard[i].playerScore > score ? leaderboard[i].playerScore : score);
+            found = true;
             break;
         }
-    }
 
-    if (!foundPlayer && leaderboardCount < MAX_LEADERBOARD_ENTRIES)
-    {
-        leaderboard[leaderboardCount].playerName = playerName;
-        leaderboard[leaderboardCount].playerScore = score;
-        leaderboardCount++;
-    }
+    if (!found && leaderboardCount < MAX_LEADERBOARD_ENTRIES)
+        leaderboard[leaderboardCount++] = { playerName, score };
 
-    ensureSpecialPlayerExists();
     sortLeaderboard();
     saveLeaderboard();
     scoreSubmitted = true;
 }
 
-// Draw text horizontally centered around a given x-coordinate.
-void drawCenteredText(sf::RenderWindow& window, sf::Text& text, float centerX, float y)
+void drawCenteredText(sf::RenderWindow& window, sf::Text& text,
+    float centerX, float y)
 {
     sf::FloatRect bounds = text.getLocalBounds();
     text.setPosition({
-        centerX - (bounds.position.x + bounds.size.x / 2.0f),
-        y
+        centerX - (bounds.position.x + bounds.size.x / 2.0f), y
         });
-
     window.draw(text);
 }
 
@@ -989,35 +827,24 @@ void drawLeaderboard(sf::RenderWindow& window, float startY)
     divider.setFillColor(sf::Color(120, 120, 150));
     window.draw(divider);
 
-    for (int i = 0; i < DISPLAYED_LEADERBOARD_ENTRIES; i++)
+    for (int i = 0; i < DISPLAYED_LEADERBOARD_ENTRIES; ++i)
     {
-        string line;
-        sf::Color color = sf::Color::White;
-
-        if (i < leaderboardCount)
-        {
-            line = to_string(i + 1) + ".  " + leaderboard[i].playerName + "  -  " +
-                to_string(leaderboard[i].playerScore);
-
-            if (leaderboard[i].playerName == playerName)
-                color = sf::Color(120, 255, 150);
-            else if (leaderboard[i].playerName == SPECIAL_PLAYER_NAME)
-                color = sf::Color(255, 190, 100);
-        }
-        else
-        {
-            line = to_string(i + 1) + ".  ---";
-        }
+        string line = (i < leaderboardCount)
+            ? to_string(i + 1) + ".  " + leaderboard[i].playerName +
+            "  -  " + to_string(leaderboard[i].playerScore)
+            : to_string(i + 1) + ".  ---";
 
         sf::Text entryText(font, line, 18);
-        entryText.setFillColor(color);
+        entryText.setFillColor(
+            (i < leaderboardCount && leaderboard[i].playerName == playerName)
+            ? sf::Color(120, 255, 150) : sf::Color::White);
         entryText.setPosition({ 785.0f, startY + 68.0f + i * 42.0f });
         window.draw(entryText);
     }
 
-    sf::Text challenge(font, "PRODUCED BY KODE KRAFTERS", 15);
-    challenge.setFillColor(sf::Color(255, 190, 100));
-    drawCenteredText(window, challenge, 920.0f, startY + 295.0f);
+    sf::Text credit(font, "PRODUCED BY KODE KRAFTERS", 15);
+    credit.setFillColor(sf::Color(255, 190, 100));
+    drawCenteredText(window, credit, 920.0f, startY + 295.0f);
 }
 
 void drawGameOver(sf::RenderWindow& window)
@@ -1044,19 +871,20 @@ void drawGameOver(sf::RenderWindow& window)
     drawCenteredText(window, playerText, 550.0f, 235.0f);
 
     string rank = getPerformanceRank();
-
     sf::Text rankText(font, "Rank: " + rank, 25);
-    rankText.setFillColor(rank == "Candy Champion" ? sf::Color(255, 215, 0) :
-        (rank == "Sweet Specialist" ? sf::Color(100, 220, 255) : sf::Color(150, 255, 150)));
+    rankText.setFillColor(rank == "Candy Champion"
+        ? sf::Color(255, 215, 0)
+        : (rank == "Sweet Specialist"
+            ? sf::Color(100, 220, 255) : sf::Color(150, 255, 150)));
     drawCenteredText(window, rankText, 550.0f, 295.0f);
 
-    sf::Text personalBestText(font, "Personal Best: " + to_string(personalBest), 23);
-    personalBestText.setFillColor(sf::Color(255, 180, 100));
-    drawCenteredText(window, personalBestText, 550.0f, 350.0f);
+    sf::Text bestText(font, "Personal Best: " + to_string(personalBest), 23);
+    bestText.setFillColor(sf::Color(255, 180, 100));
+    drawCenteredText(window, bestText, 550.0f, 350.0f);
 
-    sf::Text timeUpText(font, "Time's up!", 22);
-    timeUpText.setFillColor(sf::Color::White);
-    drawCenteredText(window, timeUpText, 550.0f, 445.0f);
+    sf::Text movesText(font, "No moves remaining!", 22);
+    movesText.setFillColor(sf::Color::White);
+    drawCenteredText(window, movesText, 550.0f, 445.0f);
 
     sf::RectangleShape restartButton({ 260.0f, 70.0f });
     restartButton.setPosition({ 420.0f, 535.0f });
@@ -1074,11 +902,9 @@ void drawNameEntry(sf::RenderWindow& window)
 {
     static sf::Font font("C:/Windows/Fonts/arial.ttf");
 
-    // Reuse the exact soft glow, bubble and frame treatment used behind the game board.
     window.clear(sf::Color(19, 17, 43));
     drawThemeBackground(window);
 
-    // Main translucent-style title panel.
     sf::RectangleShape panel({ 700.0f, 590.0f });
     panel.setPosition({ 200.0f, 105.0f });
     panel.setFillColor(sf::Color(34, 31, 66, 238));
@@ -1086,18 +912,16 @@ void drawNameEntry(sf::RenderWindow& window)
     panel.setOutlineColor(sf::Color(160, 205, 255, 105));
     window.draw(panel);
 
-    // Five actual Jolly Rancher candy textures across the welcome panel.
     for (int i = 0; i < 5; ++i)
     {
         if (candyTexturesLoaded)
         {
             sf::Sprite candy(candyTextures[i]);
-            const sf::Vector2u textureSize = candyTextures[i].getSize();
-            const float widthScale = 58.0f / static_cast<float>(textureSize.x);
-            const float heightScale = 58.0f / static_cast<float>(textureSize.y);
-            const float scale = widthScale < heightScale ? widthScale : heightScale;
-
-            candy.setOrigin({ textureSize.x / 2.0f, textureSize.y / 2.0f });
+            sf::Vector2u size = candyTextures[i].getSize();
+            float widthScale = 58.0f / static_cast<float>(size.x);
+            float heightScale = 58.0f / static_cast<float>(size.y);
+            float scale = (widthScale < heightScale ? widthScale : heightScale);
+            candy.setOrigin({ size.x / 2.0f, size.y / 2.0f });
             candy.setScale({ scale, scale });
             candy.setPosition({ 302.0f + i * 134.0f, 165.0f });
             window.draw(candy);
@@ -1114,7 +938,6 @@ void drawNameEntry(sf::RenderWindow& window)
     titleBottom.setFillColor(sf::Color(255, 125, 165));
     drawCenteredText(window, titleBottom, 550.0f, 260.0f);
 
-    // Small cool-toned subtitle and separator.
     sf::Text subtitle(font, "A FRUITY, SWEET MATCH-3 CHALLENGE", 20);
     subtitle.setLetterSpacing(1.08f);
     subtitle.setFillColor(sf::Color(175, 220, 255));
@@ -1139,8 +962,7 @@ void drawNameEntry(sf::RenderWindow& window)
     string shownName = playerName.empty() ? "Type your name here..." : playerName;
     sf::Text inputText(font, shownName, 25);
     inputText.setFillColor(playerName.empty()
-        ? sf::Color(180, 185, 210)
-        : sf::Color::White);
+        ? sf::Color(180, 185, 210) : sf::Color::White);
     drawCenteredText(window, inputText, 550.0f, 477.0f);
 
     sf::Text instruction(font, "PRESS ENTER TO START", 21);
@@ -1148,71 +970,54 @@ void drawNameEntry(sf::RenderWindow& window)
     instruction.setFillColor(sf::Color(150, 255, 205));
     drawCenteredText(window, instruction, 550.0f, 560.0f);
 
-    sf::Text challenge(font, "Can you beat Maam Anousha's 2000 points?", 18);
-    challenge.setFillColor(sf::Color(255, 190, 125));
-    drawCenteredText(window, challenge, 550.0f, 635.0f);
+    sf::Text hint(font, "Match golden + candies to earn extra moves!", 18);
+    hint.setFillColor(sf::Color(255, 190, 125));
+    drawCenteredText(window, hint, 550.0f, 635.0f);
 }
 
-// Load every player's Personal Best from the file.
 void loadPersonalBests()
 {
     personalBests.clear();
-
     ifstream inputFile(PERSONAL_BEST_FILE);
     string line;
 
     if (inputFile.is_open())
-    {
         while (getline(inputFile, line))
         {
             size_t separator = line.rfind('|');
-
-            if (separator == string::npos)
-                continue;
+            if (separator == string::npos) continue;
 
             string name = line.substr(0, separator);
             string scoreText = line.substr(separator + 1);
-
-            if (name.empty())
-                continue;
+            if (name.empty()) continue;
 
             try
             {
                 int savedScore = stoi(scoreText);
-
                 if (personalBests.find(name) == personalBests.end() ||
                     savedScore > personalBests[name])
-                {
                     personalBests[name] = savedScore;
-                }
             }
             catch (...)
             {
                 // Ignore malformed Personal Best entries.
             }
         }
-    }
 }
 
-// Retrieve the Personal Best belonging to the current player.
 void loadPersonalBest()
 {
     personalBest = 0;
-
-    auto playerRecord = personalBests.find(playerName);
-
-    if (playerRecord != personalBests.end())
-        personalBest = playerRecord->second;
+    auto record = personalBests.find(playerName);
+    if (record != personalBests.end()) personalBest = record->second;
 }
 
-// Save all players' Personal Best records.
 void savePersonalBest()
 {
     ofstream outputFile(PERSONAL_BEST_FILE);
-
     if (!outputFile.is_open())
     {
-        cerr << "Could not save " << PERSONAL_BEST_FILE << endl;
+        cerr << "Could not save " << PERSONAL_BEST_FILE << '\n';
         return;
     }
 
@@ -1220,27 +1025,39 @@ void savePersonalBest()
         outputFile << entry.first << "|" << entry.second << '\n';
 }
 
+void finishGame()
+{
+    if (gameOver) return;
+
+    gameOver = true;
+    audio.playGameOver();
+
+    if (score > personalBest)
+    {
+        personalBest = score;
+        personalBests[playerName] = personalBest;
+        savePersonalBest();
+    }
+    submitScoreToLeaderboard();
+}
+
 void restartGame()
 {
     score = 0;
-    timeRemaining = GAME_DURATION_SECONDS;
-    successfulMatches = 0;
+    movesRemaining = STARTING_MOVES;
+    successfulMoves = 0;
 
-    gameTimerClock.restart();
     animationClock.restart();
-
-    selectedRow = -1;
-    selectedCol = -1;
+    selectedRow = selectedCol = -1;
 
     gameOver = false;
     scoreSubmitted = false;
     isResolving = false;
     isRemovingMatches = false;
 
-    // Clear all Time Bonus Candies from the previous game.
-    for (int row = 0; row < ROWS; row++)
-        for (int col = 0; col < COLS; col++)
-            timeBonus[row][col] = false;
+    for (int row = 0; row < ROWS; ++row)
+        for (int col = 0; col < COLS; ++col)
+            moveBonus[row][col] = false;
 
     initializeBoard();
     checkMatches();
@@ -1253,7 +1070,6 @@ int main()
 
     loadCandyTextures();
     audio.loadAudio();
-
     loadPersonalBests();
     loadLeaderboard();
 
@@ -1275,54 +1091,47 @@ int main()
                 if (const auto* textEvent = event->getIf<sf::Event::TextEntered>())
                 {
                     char32_t entered = textEvent->unicode;
-
                     if (entered >= 32 && entered <= 126 && playerName.size() < 16)
                         playerName += static_cast<char>(entered);
                 }
 
                 if (const auto* keyEvent = event->getIf<sf::Event::KeyPressed>())
                 {
-                    if (keyEvent->code == sf::Keyboard::Key::Backspace && !playerName.empty())
+                    if (keyEvent->code == sf::Keyboard::Key::Backspace &&
+                        !playerName.empty())
                         playerName.pop_back();
-                    else if (keyEvent->code == sf::Keyboard::Key::Enter && !playerName.empty())
+                    else if (keyEvent->code == sf::Keyboard::Key::Enter &&
+                        !playerName.empty())
                     {
-                        if (playerName == SPECIAL_PLAYER_NAME)
-                            playerName = "Player";
-
                         loadPersonalBest();
-
                         nameEntryScreen = false;
                         restartGame();
                     }
                 }
-
                 continue;
             }
 
             if (gameOver)
             {
-                if (const auto* mouseEvent = event->getIf<sf::Event::MouseButtonPressed>())
+                if (const auto* mouseEvent =
+                    event->getIf<sf::Event::MouseButtonPressed>())
                 {
                     if (mouseEvent->button == sf::Mouse::Button::Left)
                     {
                         sf::Vector2i mousePosition = sf::Mouse::getPosition(window);
-
                         sf::FloatRect restartBounds(
-                            { 420.0f, 535.0f },
-                            { 260.0f, 70.0f }
-                        );
+                            { 420.0f, 535.0f }, { 260.0f, 70.0f });
 
                         if (restartBounds.contains({
                             static_cast<float>(mousePosition.x),
                             static_cast<float>(mousePosition.y)
                             }))
-                        {
                             restartGame();
-                        }
                     }
                 }
             }
-            else if (const auto* mouseEvent = event->getIf<sf::Event::MouseButtonPressed>())
+            else if (const auto* mouseEvent =
+                event->getIf<sf::Event::MouseButtonPressed>())
             {
                 if (mouseEvent->button == sf::Mouse::Button::Left)
                 {
@@ -1339,61 +1148,44 @@ int main()
             continue;
         }
 
-        if (!gameOver)
+        updateAnimations();
+
+        if (!gameOver && isResolving && allAnimationsFinished())
         {
-            updateGameTimer();
-
-            if (timeRemaining <= 0.0f)
+            if (isRemovingMatches)
             {
-                timeRemaining = 0.0f;
-                gameOver = true;
-                audio.playGameOver();
+                removeMatchedCandies();
 
-                if (score > personalBest)
-                {
-                    personalBest = score;
-                    personalBests[playerName] = personalBest;
-                    savePersonalBest();
-                }
+                for (int row = 0; row < ROWS; ++row)
+                    for (int col = 0; col < COLS; ++col)
+                        matched[row][col] = false;
 
-                submitScoreToLeaderboard();
+                isRemovingMatches = false;
+                applyGravity();
+                refillBoard();
             }
-        }
-
-        if (!gameOver)
-        {
-            updateAnimations();
-
-            if (isResolving && allAnimationsFinished())
+            else
             {
-                if (isRemovingMatches)
-                {
-                    removeMatchedCandies();
-
-                    for (int row = 0; row < ROWS; row++)
-                        for (int col = 0; col < COLS; col++)
-                            matched[row][col] = false;
-
-                    isRemovingMatches = false;
-
-                    applyGravity();
-                    refillBoard();
-                }
+                checkMatches();
+                if (hasMatches())
+                    resolveMatches();
                 else
                 {
-                    checkMatches();
-
-                    if (hasMatches())
-                        resolveMatches();
-                    else
-                        isResolving = false;
+                    isResolving = false;
+                    // End only after all cascades finish, so a bonus candy
+                    // matched on the final move can still grant an extra move.
+                    if (movesRemaining <= 0)
+                        finishGame();
                 }
             }
         }
+
+        // Also handle a zero-move state when no animation is in progress.
+        if (!gameOver && movesRemaining <= 0 && !isResolving)
+            finishGame();
 
         window.clear(sf::Color(19, 17, 43));
         drawThemeBackground(window);
-
         drawBoard(window);
 
         if (gameOver)
