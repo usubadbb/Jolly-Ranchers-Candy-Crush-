@@ -30,6 +30,20 @@ struct LeaderboardEntry
 const int ROWS = 9;
 const int COLS = 9;
 const int STARTING_MOVES = 20;
+const int MAX_LEVEL = 5;
+
+// Targets rise while the number of available moves falls.
+int getLevelTarget(int level)
+{
+    const int targets[MAX_LEVEL] = { 300, 400, 500, 600, 700 };
+    return targets[level - 1];
+}
+
+int getMovesForLevel(int level)
+{
+    const int moves[MAX_LEVEL] = { 20, 18, 16, 14, 12 };
+    return moves[level - 1];
+}
 const int MAX_LEADERBOARD_ENTRIES = 100;
 const int DISPLAYED_LEADERBOARD_ENTRIES = 5;
 const float ANIMATION_DURATION = 0.3f;
@@ -47,6 +61,14 @@ bool matched[ROWS][COLS];
 bool moveBonus[ROWS][COLS] = {};
 int successfulMoves = 0;
 int movesRemaining = STARTING_MOVES;
+
+// Level progress is separate from the total score used by the leaderboard.
+// Points beyond a level's target carry over into the next level.
+int currentLevel = 1;
+int levelScore = 0;       // Score earned in the current level.
+int totalScore = 0;       // Cumulative score across every level in this run.
+int levelTarget = getLevelTarget(1);
+bool gameWon = false;
 
 int selectedRow = -1;
 int selectedCol = -1;
@@ -172,6 +194,7 @@ void updateAnimations();
 bool allAnimationsFinished();
 void resolveMatches();
 void calculateScore();
+void updateLevelProgress();
 bool hasMatches();
 void drawGameOver(sf::RenderWindow& window);
 void spawnMoveBonus();
@@ -297,13 +320,16 @@ void drawBoard(sf::RenderWindow& window)
     scoreText.setPosition({ 78.0f, 15.0f });
     window.draw(scoreText);
 
-    sf::Text nameText(font, playerName, 20);
-    nameText.setFillColor(sf::Color(190, 225, 255));
-    sf::FloatRect nameBounds = nameText.getLocalBounds();
-    nameText.setPosition({
-        400.0f - (nameBounds.position.x + nameBounds.size.x / 2.0f), 16.0f
+    sf::Text levelText(font,
+        "LEVEL " + to_string(currentLevel) + " / " + to_string(MAX_LEVEL) +
+        "   TARGET " + to_string(levelTarget),
+        19);
+    levelText.setFillColor(sf::Color(190, 225, 255));
+    sf::FloatRect levelBounds = levelText.getLocalBounds();
+    levelText.setPosition({
+        405.0f - (levelBounds.position.x + levelBounds.size.x / 2.0f), 16.0f
         });
-    window.draw(nameText);
+    window.draw(levelText);
 
     sf::Text movesText(font, "MOVES  " + to_string(movesRemaining), 21);
     movesText.setFillColor(movesRemaining <= 5
@@ -313,6 +339,22 @@ void drawBoard(sf::RenderWindow& window)
         722.0f - (movesBounds.position.x + movesBounds.size.x), 15.0f
         });
     window.draw(movesText);
+
+    // Progress toward the current level's target.
+    sf::RectangleShape progressBackground({ 643.0f, 4.0f });
+    progressBackground.setPosition({ 78.0f, 47.0f });
+    progressBackground.setFillColor(sf::Color(75, 75, 105));
+    window.draw(progressBackground);
+
+    float progress = (levelTarget > 0)
+        ? static_cast<float>(levelScore) / static_cast<float>(levelTarget)
+        : 0.0f;
+    if (progress > 1.0f) progress = 1.0f;
+
+    sf::RectangleShape progressFill({ 643.0f * progress, 4.0f });
+    progressFill.setPosition({ 78.0f, 47.0f });
+    progressFill.setFillColor(sf::Color(255, 205, 90));
+    window.draw(progressFill);
 
     const float cellSize = 75.0f;
     const float startX = 62.5f;
@@ -520,8 +562,8 @@ void selectCandy(int mouseX, int mouseY)
         --movesRemaining;
         ++successfulMoves;
 
-        // Spawn a special +1-move candy after every five successful swaps.
-        if (successfulMoves % 5 == 0)
+        // A bonus candy appears every six successful swaps.
+        if (successfulMoves % 6 == 0)
             spawnMoveBonus();
 
         resolveMatches();
@@ -652,6 +694,29 @@ void refillBoard()
             }
 }
 
+// Complete a level, increase the difficulty, and stop after level 5.
+// The total run score is preserved for the leaderboard.
+void updateLevelProgress()
+{
+    if (levelScore >= levelTarget)
+    {
+        if (currentLevel >= MAX_LEVEL)
+        {
+            // Let the current cascade finish before showing the win screen.
+            gameWon = true;
+            movesRemaining = 0;
+            return;
+        }
+
+        ++currentLevel;
+        levelScore = 0;
+        score = 0;
+        movesRemaining = getMovesForLevel(currentLevel);
+        successfulMoves = 0;
+        levelTarget = getLevelTarget(currentLevel);
+    }
+}
+
 void calculateScore()
 {
     for (int row = 0; row < ROWS; ++row)
@@ -659,6 +724,8 @@ void calculateScore()
             if (matched[row][col])
             {
                 score += 10;
+                levelScore += 10;
+                totalScore += 10;
 
                 // Matching a special candy restores one move.
                 if (moveBonus[row][col])
@@ -667,6 +734,8 @@ void calculateScore()
                     moveBonus[row][col] = false;
                 }
             }
+
+    updateLevelProgress();
 }
 
 void resolveMatches()
@@ -692,8 +761,8 @@ void resolveMatches()
 
 string getPerformanceRank()
 {
-    if (score >= 1000) return "Candy Champion";
-    if (score >= 500) return "Sweet Specialist";
+    if (totalScore >= 1000) return "Candy Champion";
+    if (totalScore >= 500) return "Sweet Specialist";
     return "Candy Rookie";
 }
 
@@ -784,13 +853,14 @@ void submitScoreToLeaderboard()
         if (leaderboard[i].playerName == playerName)
         {
             leaderboard[i].playerScore =
-                (leaderboard[i].playerScore > score ? leaderboard[i].playerScore : score);
+                (leaderboard[i].playerScore > totalScore
+                    ? leaderboard[i].playerScore : totalScore);
             found = true;
             break;
         }
 
     if (!found && leaderboardCount < MAX_LEADERBOARD_ENTRIES)
-        leaderboard[leaderboardCount++] = { playerName, score };
+        leaderboard[leaderboardCount++] = { playerName, totalScore };
 
     sortLeaderboard();
     saveLeaderboard();
@@ -862,13 +932,18 @@ void drawGameOver(sf::RenderWindow& window)
     panel.setOutlineColor(sf::Color(255, 215, 0));
     window.draw(panel);
 
-    sf::Text title(font, "GAME OVER", 48);
+    sf::Text title(font, gameWon ? "CONGRATS!" : "GAME OVER", 48);
     title.setFillColor(sf::Color::White);
     drawCenteredText(window, title, 550.0f, 145.0f);
 
-    sf::Text playerText(font, playerName + "'s Score: " + to_string(score), 27);
+    sf::Text playerText(font,
+        playerName + "'s Level Score: " + to_string(score), 25);
     playerText.setFillColor(sf::Color(255, 220, 100));
-    drawCenteredText(window, playerText, 550.0f, 235.0f);
+    drawCenteredText(window, playerText, 550.0f, 225.0f);
+
+    sf::Text totalText(font, "Total Run Score: " + to_string(totalScore), 25);
+    totalText.setFillColor(sf::Color(150, 255, 190));
+    drawCenteredText(window, totalText, 550.0f, 270.0f);
 
     string rank = getPerformanceRank();
     sf::Text rankText(font, "Rank: " + rank, 25);
@@ -876,15 +951,21 @@ void drawGameOver(sf::RenderWindow& window)
         ? sf::Color(255, 215, 0)
         : (rank == "Sweet Specialist"
             ? sf::Color(100, 220, 255) : sf::Color(150, 255, 150)));
-    drawCenteredText(window, rankText, 550.0f, 295.0f);
+    drawCenteredText(window, rankText, 550.0f, 320.0f);
+
+    sf::Text levelResultText(font,
+        "Level Reached: " + to_string(currentLevel), 23);
+    levelResultText.setFillColor(sf::Color(150, 220, 255));
+    drawCenteredText(window, levelResultText, 550.0f, 365.0f);
 
     sf::Text bestText(font, "Personal Best: " + to_string(personalBest), 23);
     bestText.setFillColor(sf::Color(255, 180, 100));
-    drawCenteredText(window, bestText, 550.0f, 350.0f);
+    drawCenteredText(window, bestText, 550.0f, 410.0f);
 
-    sf::Text movesText(font, "No moves remaining!", 22);
+    sf::Text movesText(font,
+        gameWon ? "Congrats! You completed all 5 levels!" : "No moves remaining!", 22);
     movesText.setFillColor(sf::Color::White);
-    drawCenteredText(window, movesText, 550.0f, 445.0f);
+    drawCenteredText(window, movesText, 550.0f, 470.0f);
 
     sf::RectangleShape restartButton({ 260.0f, 70.0f });
     restartButton.setPosition({ 420.0f, 535.0f });
@@ -1032,9 +1113,9 @@ void finishGame()
     gameOver = true;
     audio.playGameOver();
 
-    if (score > personalBest)
+    if (totalScore > personalBest)
     {
-        personalBest = score;
+        personalBest = totalScore;
         personalBests[playerName] = personalBest;
         savePersonalBest();
     }
@@ -1044,8 +1125,13 @@ void finishGame()
 void restartGame()
 {
     score = 0;
-    movesRemaining = STARTING_MOVES;
+    totalScore = 0;
+    currentLevel = 1;
+    levelScore = 0;
+    levelTarget = getLevelTarget(currentLevel);
+    movesRemaining = getMovesForLevel(currentLevel);
     successfulMoves = 0;
+    gameWon = false;
 
     animationClock.restart();
     selectedRow = selectedCol = -1;
