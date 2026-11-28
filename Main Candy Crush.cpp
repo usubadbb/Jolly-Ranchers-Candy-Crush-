@@ -296,12 +296,6 @@ void drawThemeBackground(sf::RenderWindow& window)
         window.draw(bubble);
     }
 
-    sf::RectangleShape frame({ 700.0f, 700.0f });
-    frame.setPosition({ 42.0f, 42.0f });
-    frame.setFillColor(sf::Color::Transparent);
-    frame.setOutlineThickness(2.0f);
-    frame.setOutlineColor(sf::Color(150, 205, 255, 45));
-    window.draw(frame);
 }
 
 void drawBoard(sf::RenderWindow& window)
@@ -881,20 +875,23 @@ void drawLeaderboard(sf::RenderWindow& window, float startY)
 {
     static sf::Font font("C:/Windows/Fonts/arial.ttf");
 
+    // Match the deep-indigo, berry-pink and soft-mint title-screen palette.
     sf::RectangleShape panel({ 320.0f, 340.0f });
     panel.setPosition({ 760.0f, startY - 25.0f });
-    panel.setFillColor(sf::Color(45, 45, 70));
+    panel.setFillColor(sf::Color(34, 31, 66, 245));
     panel.setOutlineThickness(2.0f);
-    panel.setOutlineColor(sf::Color(255, 215, 0));
+    panel.setOutlineColor(sf::Color(160, 180, 220, 190));
     window.draw(panel);
 
     sf::Text heading(font, "LEADERBOARD", 26);
-    heading.setFillColor(sf::Color(255, 215, 0));
+    heading.setStyle(sf::Text::Bold);
+    heading.setLetterSpacing(1.05f);
+    heading.setFillColor(sf::Color(255, 145, 180));
     drawCenteredText(window, heading, 920.0f, startY + 5.0f);
 
     sf::RectangleShape divider({ 270.0f, 2.0f });
     divider.setPosition({ 785.0f, startY + 48.0f });
-    divider.setFillColor(sf::Color(120, 120, 150));
+    divider.setFillColor(sf::Color(145, 165, 205, 170));
     window.draw(divider);
 
     for (int i = 0; i < DISPLAYED_LEADERBOARD_ENTRIES; ++i)
@@ -907,13 +904,14 @@ void drawLeaderboard(sf::RenderWindow& window, float startY)
         sf::Text entryText(font, line, 18);
         entryText.setFillColor(
             (i < leaderboardCount && leaderboard[i].playerName == playerName)
-            ? sf::Color(120, 255, 150) : sf::Color::White);
+            ? sf::Color(150, 255, 205) : sf::Color(238, 240, 255));
         entryText.setPosition({ 785.0f, startY + 68.0f + i * 42.0f });
         window.draw(entryText);
     }
 
     sf::Text credit(font, "PRODUCED BY KODE KRAFTERS", 15);
-    credit.setFillColor(sf::Color(255, 190, 100));
+    credit.setStyle(sf::Text::Bold);
+    credit.setFillColor(sf::Color(185, 195, 225));
     drawCenteredText(window, credit, 920.0f, startY + 295.0f);
 }
 
@@ -922,61 +920,84 @@ void drawGameOver(sf::RenderWindow& window)
     static sf::Font font("C:/Windows/Fonts/arial.ttf");
 
     sf::RectangleShape overlay({ 1100.0f, 800.0f });
-    overlay.setFillColor(sf::Color(0, 0, 0, 215));
+    overlay.setFillColor(sf::Color(10, 9, 27, 225));
     window.draw(overlay);
 
-    sf::RectangleShape panel({ 500.0f, 570.0f });
-    panel.setPosition({ 300.0f, 100.0f });
-    panel.setFillColor(sf::Color(45, 45, 70));
+    // A larger, cleaner results panel with the same palette as the title screen.
+    sf::RectangleShape panel({ 540.0f, 610.0f });
+    panel.setPosition({ 280.0f, 85.0f });
+    panel.setFillColor(sf::Color(34, 31, 66, 250));
     panel.setOutlineThickness(3.0f);
-    panel.setOutlineColor(sf::Color(255, 215, 0));
+    panel.setOutlineColor(sf::Color(160, 180, 220, 210));
     window.draw(panel);
 
-    sf::Text title(font, gameWon ? "CONGRATS!" : "GAME OVER", 48);
-    title.setFillColor(sf::Color::White);
-    drawCenteredText(window, title, 550.0f, 145.0f);
+    sf::RectangleShape topAccent({ 540.0f, 8.0f });
+    topAccent.setPosition({ 280.0f, 85.0f });
+    topAccent.setFillColor(sf::Color(255, 125, 165));
+    window.draw(topAccent);
+
+    sf::Text title(font, gameWon ? "SWEET VICTORY!" : "GAME OVER", 43);
+    title.setStyle(sf::Text::Bold);
+    title.setLetterSpacing(1.04f);
+    title.setFillColor(sf::Color(255, 145, 180));
+    drawCenteredText(window, title, 550.0f, 130.0f);
+
+    sf::Text subtitle(font,
+        gameWon ? "You completed the Jolly Ranchers challenge!" : "That was a sweet run. Try again!",
+        17);
+    subtitle.setFillColor(sf::Color(190, 205, 235));
+    drawCenteredText(window, subtitle, 550.0f, 190.0f);
+
+    sf::RectangleShape divider({ 390.0f, 2.0f });
+    divider.setPosition({ 355.0f, 225.0f });
+    divider.setFillColor(sf::Color(145, 165, 205, 170));
+    window.draw(divider);
 
     sf::Text playerText(font,
-        playerName + "'s Level Score: " + to_string(score), 25);
-    playerText.setFillColor(sf::Color(255, 220, 100));
-    drawCenteredText(window, playerText, 550.0f, 225.0f);
+        playerName + "'s Level Score: " + to_string(score), 23);
+    playerText.setFillColor(sf::Color(245, 240, 255));
+    drawCenteredText(window, playerText, 550.0f, 250.0f);
 
-    sf::Text totalText(font, "Total Run Score: " + to_string(totalScore), 25);
-    totalText.setFillColor(sf::Color(150, 255, 190));
-    drawCenteredText(window, totalText, 550.0f, 270.0f);
+    sf::Text totalText(font, "Total Run Score: " + to_string(totalScore), 24);
+    totalText.setStyle(sf::Text::Bold);
+    totalText.setFillColor(sf::Color(150, 255, 205));
+    drawCenteredText(window, totalText, 550.0f, 295.0f);
 
     string rank = getPerformanceRank();
-    sf::Text rankText(font, "Rank: " + rank, 25);
-    rankText.setFillColor(rank == "Candy Champion"
-        ? sf::Color(255, 215, 0)
-        : (rank == "Sweet Specialist"
-            ? sf::Color(100, 220, 255) : sf::Color(150, 255, 150)));
-    drawCenteredText(window, rankText, 550.0f, 320.0f);
+    sf::Text rankText(font, "RANK  |  " + rank, 24);
+    rankText.setStyle(sf::Text::Bold);
+    rankText.setFillColor(sf::Color(255, 220, 160));
+    drawCenteredText(window, rankText, 550.0f, 345.0f);
 
     sf::Text levelResultText(font,
-        "Level Reached: " + to_string(currentLevel), 23);
-    levelResultText.setFillColor(sf::Color(150, 220, 255));
-    drawCenteredText(window, levelResultText, 550.0f, 365.0f);
+        "Level Reached: " + to_string(currentLevel), 22);
+    levelResultText.setFillColor(sf::Color(190, 205, 235));
+    drawCenteredText(window, levelResultText, 550.0f, 395.0f);
 
-    sf::Text bestText(font, "Personal Best: " + to_string(personalBest), 23);
-    bestText.setFillColor(sf::Color(255, 180, 100));
-    drawCenteredText(window, bestText, 550.0f, 410.0f);
+    sf::Text bestText(font, "Personal Best: " + to_string(personalBest), 22);
+    bestText.setFillColor(sf::Color(190, 205, 235));
+    drawCenteredText(window, bestText, 550.0f, 438.0f);
 
-    sf::Text movesText(font,
-        gameWon ? "Congrats! You completed all 5 levels!" : "No moves remaining!", 22);
-    movesText.setFillColor(sf::Color::White);
-    drawCenteredText(window, movesText, 550.0f, 470.0f);
+    sf::Text resultText(font,
+        gameWon ? "Congrats! You completed all 5 levels!" : "No moves remaining!",
+        20);
+    resultText.setStyle(sf::Text::Bold);
+    resultText.setFillColor(gameWon
+        ? sf::Color(150, 255, 205) : sf::Color(255, 175, 195));
+    drawCenteredText(window, resultText, 550.0f, 495.0f);
 
-    sf::RectangleShape restartButton({ 260.0f, 70.0f });
-    restartButton.setPosition({ 420.0f, 535.0f });
-    restartButton.setFillColor(sf::Color(70, 170, 100));
-    restartButton.setOutlineThickness(3.0f);
-    restartButton.setOutlineColor(sf::Color::White);
+    sf::RectangleShape restartButton({ 280.0f, 66.0f });
+    restartButton.setPosition({ 410.0f, 565.0f });
+    restartButton.setFillColor(sf::Color(190, 75, 115));
+    restartButton.setOutlineThickness(2.0f);
+    restartButton.setOutlineColor(sf::Color(255, 190, 210));
     window.draw(restartButton);
 
-    sf::Text restartText(font, "RESTART GAME", 27);
+    sf::Text restartText(font, "PLAY AGAIN", 25);
+    restartText.setStyle(sf::Text::Bold);
+    restartText.setLetterSpacing(1.05f);
     restartText.setFillColor(sf::Color::White);
-    drawCenteredText(window, restartText, 550.0f, 552.0f);
+    drawCenteredText(window, restartText, 550.0f, 582.0f);
 }
 
 void drawNameEntry(sf::RenderWindow& window)
@@ -986,7 +1007,7 @@ void drawNameEntry(sf::RenderWindow& window)
     window.clear(sf::Color(19, 17, 43));
     drawThemeBackground(window);
 
-    sf::RectangleShape panel({ 700.0f, 590.0f });
+    sf::RectangleShape panel({ 700.0f, 640.0f });
     panel.setPosition({ 200.0f, 105.0f });
     panel.setFillColor(sf::Color(34, 31, 66, 238));
     panel.setOutlineThickness(2.0f);
@@ -1019,7 +1040,7 @@ void drawNameEntry(sf::RenderWindow& window)
     titleBottom.setFillColor(sf::Color(255, 125, 165));
     drawCenteredText(window, titleBottom, 550.0f, 260.0f);
 
-    sf::Text subtitle(font, "A FRUITY, SWEET MATCH-3 CHALLENGE", 20);
+    sf::Text subtitle(font, "A FRUITY, SWEET CANDY CHALLENGE", 20);
     subtitle.setLetterSpacing(1.08f);
     subtitle.setFillColor(sf::Color(175, 220, 255));
     drawCenteredText(window, subtitle, 550.0f, 340.0f);
@@ -1051,9 +1072,42 @@ void drawNameEntry(sf::RenderWindow& window)
     instruction.setFillColor(sf::Color(150, 255, 205));
     drawCenteredText(window, instruction, 550.0f, 560.0f);
 
-    sf::Text hint(font, "Match golden + candies to earn extra moves!", 18);
-    hint.setFillColor(sf::Color(255, 190, 125));
-    drawCenteredText(window, hint, 550.0f, 635.0f);
+    sf::Text hint(font, "Tip: Match + candies to earn extra moves!", 18);
+    hint.setStyle(sf::Text::Bold);
+    hint.setFillColor(sf::Color(255, 190, 210));
+    drawCenteredText(window, hint, 550.0f, 610.0f);
+
+    // Coordinated, high-contrast credits section.
+    sf::RectangleShape creditsPanel({ 610.0f, 96.0f });
+    creditsPanel.setPosition({ 245.0f, 645.0f });
+    creditsPanel.setFillColor(sf::Color(48, 43, 82, 245));
+    creditsPanel.setOutlineThickness(1.5f);
+    creditsPanel.setOutlineColor(sf::Color(150, 255, 220, 155));
+    window.draw(creditsPanel);
+
+    sf::Text developedBy(font, "DEVELOPED BY", 19);
+    developedBy.setStyle(sf::Text::Bold);
+    developedBy.setLetterSpacing(1.12f);
+    developedBy.setFillColor(sf::Color(150, 255, 220));
+    drawCenteredText(window, developedBy, 550.0f, 650.0f);
+
+    sf::Text developerNames(font,
+        "Usman Atique  |  Haris Jamshaid  |  Azan Saleem", 21);
+    developerNames.setStyle(sf::Text::Bold);
+    developerNames.setLetterSpacing(1.02f);
+    developerNames.setFillColor(sf::Color(255, 205, 220));
+    drawCenteredText(window, developerNames, 550.0f, 675.0f);
+
+    sf::RectangleShape creditDivider({ 470.0f, 1.5f });
+    creditDivider.setPosition({ 315.0f, 704.0f });
+    creditDivider.setFillColor(sf::Color(155, 165, 215, 150));
+    window.draw(creditDivider);
+
+    sf::Text supervisedBy(font, "SUPERVISED BY:  Hussain Malik", 20);
+    supervisedBy.setStyle(sf::Text::Bold);
+    supervisedBy.setLetterSpacing(1.02f);
+    supervisedBy.setFillColor(sf::Color(255, 215, 155));
+    drawCenteredText(window, supervisedBy, 550.0f, 710.0f);
 }
 
 void loadPersonalBests()
